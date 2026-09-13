@@ -1,34 +1,28 @@
 package ru.mcgl.launcher;
 
 import java.awt.BorderLayout;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
-import java.awt.Image;
-import java.awt.RenderingHints;
-import java.awt.image.BufferedImage;
-import javax.imageio.ImageIO;
-import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
+import java.awt.Graphics;
+import java.awt.Image;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
 
-import javax.swing.BorderFactory;
+import javax.imageio.ImageIO;
 import javax.swing.Box;
-import javax.swing.JButton;
+import javax.swing.BoxLayout;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
-import javax.swing.JProgressBar;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
-import javax.swing.UIManager;
+import javax.swing.Timer;
+import javax.swing.border.EmptyBorder;
 
 /**
  * Лаунчер «Пора Копать».
@@ -37,16 +31,15 @@ import javax.swing.UIManager;
  * сам и показывает полосой. Пароль никуда не сохраняется, ник запоминается ради удобства.
  *
  * Для проверки без окна: {@code --check} печатает список сборки, {@code --install} доводит
- * установку до конца и ничего не запускает.
+ * установку до конца и ничего не запускает, {@code --shot файл.png} рисует окно в файл.
  */
 public final class Launcher {
 
-	private static final Color BG = new Color(0x0B0D11);
-	private static final Color PANEL = new Color(0x141A23);
-	private static final Color LINE = new Color(0x28313F);
-	private static final Color TEXT = new Color(0xE2E6EE);
-	private static final Color MUTED = new Color(0x8B95A8);
-	private static final Color GOLD = new Color(0xF0B53F);
+	private static final int WIDTH = 480;
+	private static final int HEIGHT = 520;
+	// Ровно доля картинки 920x320 при ширине окна: так она видна целиком и без искажений.
+	private static final int HEADER = 167;
+	private static final int PAD = 30;
 
 	private final Path root = Files2.home();
 	private final Properties settings = new Properties();
@@ -54,9 +47,11 @@ public final class Launcher {
 	private JFrame frame;
 	private JTextField nick;
 	private JPasswordField password;
-	private JButton play;
-	private JProgressBar bar;
+	private Skin.GoldButton play;
+	private Skin.Bar bar;
 	private JLabel status;
+	private Timer spinner;
+	private boolean working;
 
 	public static void main(String[] args) throws Exception {
 		if (args.length > 0 && ("--check".equals(args[0]) || "--install".equals(args[0]))) {
@@ -64,23 +59,8 @@ public final class Launcher {
 			return;
 		}
 		if (args.length > 0 && "--shot".equals(args[0])) {
-			// Рисуем окно в файл, чтобы посмотреть на него, никому его не показывая.
-			SwingUtilities.invokeAndWait(() -> {
-				Launcher one = new Launcher();
-				one.show();
-				one.frame.setVisible(false);
-				BufferedImage shot = new BufferedImage(one.frame.getContentPane().getWidth(),
-						one.frame.getContentPane().getHeight(), BufferedImage.TYPE_INT_RGB);
-				Graphics g = shot.getGraphics();
-				one.frame.getContentPane().printAll(g);
-				g.dispose();
-				try {
-					ImageIO.write(shot, "png", new java.io.File(args.length > 1 ? args[1] : "launcher.png"));
-				} catch (IOException broken) {
-					System.out.println("не записалось: " + broken);
-				}
-			});
-			System.exit(0);
+			shot(args.length > 1 ? args[1] : "launcher.png");
+			return;
 		}
 		SwingUtilities.invokeLater(() -> new Launcher().show());
 	}
@@ -102,91 +82,110 @@ public final class Launcher {
 				System.out.printf("  [%3.0f%%] %s%n", done * 100, what));
 		System.out.println("Точка входа: " + plan.mainClass());
 		System.out.println("В пути классов: " + plan.classpath().size() + " файлов");
-		System.out.println("Команда запуска собралась: "
-				+ Game.command(root, plan, new Site.Account("Проба", "нет", ""),
-						pack.minecraft(), pack.fabric(), 4096).size() + " частей");
+	}
+
+	/** Рисуем окно в файл, чтобы посмотреть на него, никому его не показывая. */
+	private static void shot(String file) throws Exception {
+		SwingUtilities.invokeAndWait(() -> {
+			Launcher one = new Launcher();
+			one.show();
+			one.frame.setVisible(false);
+			Component pane = one.frame.getContentPane();
+			BufferedImage image = new BufferedImage(pane.getWidth(), pane.getHeight(),
+					BufferedImage.TYPE_INT_RGB);
+			Graphics g = image.getGraphics();
+			pane.printAll(g);
+			g.dispose();
+			try {
+				ImageIO.write(image, "png", new java.io.File(file));
+			} catch (IOException broken) {
+				System.out.println("не записалось: " + broken);
+			}
+		});
+		System.exit(0);
 	}
 
 	private void show() {
-		try {
-			UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-		} catch (Exception ignored) {
-			// Внешний вид системы - мелочь, без него тоже работает.
-		}
 		load();
-
 		frame = new JFrame("Пора Копать");
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-		frame.setSize(460, 432);
+		frame.setSize(WIDTH, HEIGHT);
 		frame.setLocationRelativeTo(null);
 		frame.setResizable(false);
-		Image windowIcon = image("icon.png");
-		if (windowIcon != null) {
-			frame.setIconImage(windowIcon);
+		Image icon = image("icon.png");
+		if (icon != null) {
+			frame.setIconImage(icon);
 		}
 
-		JPanel panel = new JPanel(new GridBagLayout());
-		panel.setBackground(BG);
-		panel.setBorder(BorderFactory.createEmptyBorder(0, 26, 18, 26));
-		GridBagConstraints c = new GridBagConstraints();
-		c.gridx = 0;
-		c.fill = GridBagConstraints.HORIZONTAL;
-		c.weightx = 1;
+		JPanel body = new JPanel();
+		body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+		body.setBackground(Skin.BG);
+		body.setBorder(new EmptyBorder(2, PAD, 18, PAD));
 
-		nick = field(new JTextField(settings.getProperty("nick", "")));
-		c.gridy = 2;
-		c.insets = new Insets(18, 0, 8, 0);
-		panel.add(labelled("Ник", nick), c);
+		nick = Skin.text();
+		password = Skin.secret();
+		nick.setText(settings.getProperty("nick", ""));
 
-		password = new JPasswordField();
-		style(password);
-		c.gridy = 3;
-		panel.add(labelled("Пароль", password), c);
+		body.add(row(Skin.caption("Ник"), 16));
+		body.add(Box.createVerticalStrut(5));
+		body.add(capped(new Skin.Field(nick), 40));
+		body.add(Box.createVerticalStrut(14));
+		body.add(row(Skin.caption("Пароль"), 16));
+		body.add(Box.createVerticalStrut(5));
+		body.add(capped(new Skin.Field(password), 40));
+		body.add(Box.createVerticalStrut(20));
 
-		play = new JButton("Играть");
-		// Оформление Windows рисует кнопку по-своему и заданный фон игнорирует. Простая
-		// отрисовка слушается цветов, а нам нужна именно золотая кнопка, как на сайте.
-		play.setUI(new javax.swing.plaf.basic.BasicButtonUI());
-		play.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
-		play.setBackground(GOLD);
-		play.setForeground(new Color(0x2A1C02));
-		play.setFocusPainted(false);
-		play.setFont(play.getFont().deriveFont(Font.BOLD, 15f));
-		play.setPreferredSize(new Dimension(0, 38));
-		play.addActionListener(e -> go());
-		c.gridy = 4;
-		c.insets = new Insets(12, 0, 10, 0);
-		panel.add(play, c);
+		play = new Skin.GoldButton("Играть", this::go);
+		body.add(capped(play, 44));
+		body.add(Box.createVerticalStrut(16));
 
-		bar = new JProgressBar(0, 1000);
-		bar.setVisible(false);
-		bar.setBackground(PANEL);
-		bar.setForeground(GOLD);
-		bar.setBorderPainted(false);
-		c.gridy = 5;
-		c.insets = new Insets(0, 0, 6, 0);
-		panel.add(bar, c);
+		bar = new Skin.Bar();
+		body.add(capped(bar, 6));
+		body.add(Box.createVerticalStrut(9));
 
-		status = new JLabel(" ");
-		status.setForeground(MUTED);
-		c.gridy = 6;
-		c.insets = new Insets(0, 0, 0, 0);
-		panel.add(status, c);
+		status = Skin.label(" ", Skin.MUTED, Font.PLAIN, 12f);
+		body.add(row(status, 18));
+		body.add(Box.createVerticalGlue());
 
-		c.gridy = 7;
-		c.weighty = 1;
-		panel.add(Box.createVerticalGlue(), c);
+		body.add(row(Skin.label("porakopatb.com", new java.awt.Color(0x5E6878), Font.PLAIN, 11f), 16));
 
 		JPanel outer = new JPanel(new BorderLayout());
-		outer.setBackground(BG);
-		outer.add(new Header(image("head.png")), BorderLayout.NORTH);
-		outer.add(panel, BorderLayout.CENTER);
+		outer.setBackground(Skin.BG);
+		outer.add(new Skin.Header(image("head.png"), WIDTH, HEADER), BorderLayout.NORTH);
+		outer.add(body, BorderLayout.CENTER);
 		frame.setContentPane(outer);
-		frame.getRootPane().setDefaultButton(play);
+
+		// Кнопка гаснет, пока не введено и то и другое: меньше поводов увидеть отказ сайта.
+		Runnable check = () -> play.setOn(!working
+				&& !nick.getText().trim().isEmpty() && password.getPassword().length > 0);
+		Skin.onType(nick, check);
+		Skin.onType(password, check);
+		check.run();
+
+		password.addActionListener(e -> go());
+		nick.addActionListener(e -> password.requestFocusInWindow());
+
 		frame.setVisible(true);
 		if (!nick.getText().isBlank()) {
 			password.requestFocusInWindow();
 		}
+	}
+
+	/** BoxLayout растягивает всё по высоте, поэтому ростом каждой полосы правим вручную. */
+	private static Component capped(Component what, int height) {
+		what.setMaximumSize(new Dimension(Integer.MAX_VALUE, height));
+		what.setPreferredSize(new Dimension(0, height));
+		return what;
+	}
+
+	/** Строка во всю ширину: иначе подпись уезжает в центр. */
+	private static JPanel row(Component what, int height) {
+		JPanel line = new JPanel(new BorderLayout());
+		line.setBackground(Skin.BG);
+		line.setMaximumSize(new Dimension(Integer.MAX_VALUE, height));
+		line.setPreferredSize(new Dimension(0, height));
+		line.add(what, BorderLayout.WEST);
+		return line;
 	}
 
 	/** Картинка из ресурсов рядом с классом; если её нет, окно просто останется без неё. */
@@ -198,59 +197,6 @@ public final class Launcher {
 		}
 	}
 
-	/** Шапка окна: картинка во всю ширину и название поверх её тёмной половины. */
-	private static final class Header extends JPanel {
-		private final Image picture;
-
-		private Header(Image picture) {
-			this.picture = picture;
-			setPreferredSize(new Dimension(460, 160));
-			setBackground(BG);
-		}
-
-		@Override
-		protected void paintComponent(Graphics g) {
-			super.paintComponent(g);
-			Graphics2D g2 = (Graphics2D) g.create();
-			g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-			if (picture != null) {
-				g2.drawImage(picture, 0, 0, getWidth(), getHeight(), null);
-			}
-			g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-			g2.setColor(GOLD);
-			g2.setFont(getFont().deriveFont(Font.BOLD, 24f));
-			g2.drawString("ПОРА КОПАТЬ", 26, 74);
-			g2.setColor(TEXT);
-			g2.setFont(getFont().deriveFont(12f));
-			g2.drawString("Гриф-сервер Minecraft 1.21.1", 27, 96);
-			g2.dispose();
-		}
-	}
-
-	private JPanel labelled(String name, javax.swing.JComponent field) {
-		JPanel box = new JPanel(new BorderLayout(0, 3));
-		box.setBackground(BG);
-		JLabel label = new JLabel(name);
-		label.setForeground(MUTED);
-		label.setFont(label.getFont().deriveFont(11f));
-		box.add(label, BorderLayout.NORTH);
-		box.add(field, BorderLayout.CENTER);
-		return box;
-	}
-
-	private JTextField field(JTextField f) {
-		style(f);
-		return f;
-	}
-
-	private void style(javax.swing.text.JTextComponent f) {
-		f.setBackground(PANEL);
-		f.setForeground(TEXT);
-		f.setCaretColor(TEXT);
-		f.setBorder(BorderFactory.createCompoundBorder(
-				BorderFactory.createLineBorder(LINE), BorderFactory.createEmptyBorder(7, 9, 7, 9)));
-	}
-
 	private void go() {
 		String who = nick.getText().trim();
 		String secret = new String(password.getPassword());
@@ -258,9 +204,12 @@ public final class Launcher {
 			say("Введи ник и пароль.");
 			return;
 		}
-		play.setEnabled(false);
+		working = true;
+		play.setOn(false);
 		bar.setVisible(true);
-		bar.setIndeterminate(true);
+		bar.spin();
+		spinner = new Timer(40, e -> bar.repaint());
+		spinner.start();
 		say("Вхожу");
 
 		new Thread(() -> {
@@ -270,11 +219,14 @@ public final class Launcher {
 				save();
 
 				Site.Pack pack = Site.pack();
-				SwingUtilities.invokeLater(() -> bar.setIndeterminate(false));
+				SwingUtilities.invokeLater(() -> {
+					spinner.stop();
+					bar.set(0);
+				});
 				Installer.Plan plan = new Installer(root).install(pack, (what, done) ->
 						SwingUtilities.invokeLater(() -> {
 							status.setText(what);
-							bar.setValue((int) (done * 1000));
+							bar.set(done);
 						}));
 
 				say("Запускаю игру");
@@ -286,9 +238,12 @@ public final class Launcher {
 			} catch (Exception broken) {
 				String message = broken.getMessage() == null ? broken.toString() : broken.getMessage();
 				SwingUtilities.invokeLater(() -> {
+					if (spinner != null) {
+						spinner.stop();
+					}
+					working = false;
 					bar.setVisible(false);
-					bar.setIndeterminate(false);
-					play.setEnabled(true);
+					play.setOn(true);
 					status.setText(message);
 				});
 			}
