@@ -44,6 +44,8 @@ public final class Launcher {
 	// Ровно доля картинки 920x320 при ширине окна: так она видна целиком и без искажений.
 	private static final int HEADER = 167;
 	private static final int PAD = 30;
+	/** Насколько окно ниже, когда поле пароля спрятано. */
+	private static final int PASS_BLOCK = 73;
 
 	private final Path root = Files2.home();
 	private final Properties settings = new Properties();
@@ -53,6 +55,7 @@ public final class Launcher {
 	private JPasswordField password;
 	private Skin.GoldButton play;
 	private Skin.Check remember;
+	private JPanel passBlock;
 	private Skin.Bar bar;
 	private JLabel status;
 	private Timer spinner;
@@ -139,10 +142,18 @@ public final class Launcher {
 		body.add(Box.createVerticalStrut(5));
 		body.add(capped(new Skin.Field(nick), 40));
 		body.add(Box.createVerticalStrut(14));
-		body.add(row(Skin.caption("Пароль"), 16));
-		body.add(Box.createVerticalStrut(5));
-		body.add(capped(new Skin.Field(password), 40));
-		body.add(Box.createVerticalStrut(12));
+
+		// Когда вход сохранён, поле прячем целиком: пустая строка «Пароль» выглядит так, будто
+		// лаунчер каждый раз просит пароль заново.
+		passBlock = new JPanel();
+		passBlock.setLayout(new BoxLayout(passBlock, BoxLayout.Y_AXIS));
+		passBlock.setBackground(Skin.BG);
+		passBlock.add(row(Skin.caption("Пароль"), 16));
+		passBlock.add(Box.createVerticalStrut(5));
+		passBlock.add(capped(new Skin.Field(password), 40));
+		passBlock.add(Box.createVerticalStrut(12));
+		passBlock.setMaximumSize(new Dimension(Integer.MAX_VALUE, 73));
+		body.add(passBlock);
 
 		remember = new Skin.Check("Запомнить пароль", !saved().isEmpty());
 		body.add(capped(remember, 20));
@@ -185,17 +196,22 @@ public final class Launcher {
 				&& (password.getPassword().length > 0 || !saved().isEmpty()));
 		Skin.onType(nick, check);
 		Skin.onType(password, check);
-		// Снял галочку - забываем ключ сразу, не дожидаясь следующего входа.
+		// Снял галочку - забываем ключ сразу, не дожидаясь следующего входа, и просим пароль.
 		remember.onChange(() -> {
-			if (!remember.isOn()) {
+			if (!remember.isOn() && !saved().isEmpty()) {
 				settings.remove("device");
 				save();
+				askPassword();
 			}
 			check.run();
 		});
 		check.run();
-		if (!saved().isEmpty()) {
-			status.setText("Пароль сохранён - жми «Играть»");
+		boolean known = !saved().isEmpty();
+		passBlock.setVisible(!known);
+		if (known) {
+			// Иначе под кнопкой остаётся пустое поле в высоту спрятанного пароля.
+			frame.setSize(WIDTH, HEIGHT - PASS_BLOCK);
+			frame.setLocationRelativeTo(null);
 		}
 
 		password.addActionListener(e -> go());
@@ -205,6 +221,18 @@ public final class Launcher {
 		if (!nick.getText().isBlank() && saved().isEmpty()) {
 			password.requestFocusInWindow();
 		}
+	}
+
+	/** Показать поле пароля и поставить в него курсор: сохранённый вход больше не годится. */
+	private void askPassword() {
+		if (passBlock.isVisible()) {
+			return;
+		}
+		passBlock.setVisible(true);
+		frame.setSize(WIDTH, HEIGHT);
+		passBlock.revalidate();
+		passBlock.repaint();
+		password.requestFocusInWindow();
 	}
 
 	/** Окно без рамки само не таскается - возим его за шапку. */
@@ -312,7 +340,10 @@ public final class Launcher {
 				if (message.contains("Сохранённый вход")) {
 					settings.remove("device");
 					save();
-					SwingUtilities.invokeLater(() -> remember.set(false));
+					SwingUtilities.invokeLater(() -> {
+						remember.set(false);
+						askPassword();
+					});
 				}
 				SwingUtilities.invokeLater(() -> {
 					if (spinner != null) {
