@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'ru.mcgl'
-version = '1.0.2'
+version = '1.0.3'
 
 repositories {
     mavenCentral()
@@ -34,7 +34,9 @@ tasks.withType(JavaCompile).configureEach {
 tasks.register('fatJar', Jar) {
     archiveClassifier = 'all'
     manifest {
-        attributes 'Main-Class': application.mainClass
+        // Версию лаунчер читает у самого себя: по ней он и решает, обновляться ли.
+        attributes 'Main-Class': application.mainClass,
+                   'Implementation-Version': project.version
     }
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from sourceSets.main.output

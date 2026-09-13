@@ -59,6 +59,8 @@ public final class Launcher {
 	private boolean working;
 
 	public static void main(String[] args) throws Exception {
+		// До окна: если на сайте лежит версия новее, запустимся уже с ней.
+		Update.apply(args);
 		if (args.length > 0 && ("--check".equals(args[0]) || "--install".equals(args[0]))) {
 			console(args);
 			return;
@@ -158,7 +160,8 @@ public final class Launcher {
 		body.add(row(status, 18));
 		body.add(Box.createVerticalGlue());
 
-		body.add(row(Skin.label("porakopatb.com", new java.awt.Color(0x5E6878), Font.PLAIN, 11f), 16));
+		body.add(row(Skin.label("porakopatb.com · " + Update.running(),
+				new java.awt.Color(0x5E6878), Font.PLAIN, 11f), 16));
 
 		Skin.Header head = new Skin.Header(image("head.png"), WIDTH, HEADER);
 		head.setLayout(null);

@@ -42,6 +42,15 @@ Copy-Item $jar $input
 $dest = Join-Path $root "build\setup"
 Remove-Item (Join-Path $dest "PoraKopatb-$ver.exe") -Force -ErrorAction SilentlyContinue
 
+# Мастер установки: свои картинки и свой main.wxs. Двух строк с картинками у jpackage нет,
+# поэтому берём его же описание установщика и добавляем их сами.
+$art = Join-Path $root "build\wixres"
+Remove-Item $art -Recurse -Force -ErrorAction SilentlyContinue
+& "$java\bin\java.exe" (Join-Path $PSScriptRoot "MakeInstallerArt.java") $art
+if ($LASTEXITCODE -ne 0) { throw "Не нарисовались картинки мастера" }
+(Get-Content (Join-Path $PSScriptRoot "installer\main.wxs.in") -Raw -Encoding UTF8).Replace("@ART@", $art) |
+	Set-Content (Join-Path $art "main.wxs") -Encoding UTF8
+
 & "$java\bin\jpackage.exe" `
 	--type exe `
 	--name PoraKopatb `
@@ -53,7 +62,9 @@ Remove-Item (Join-Path $dest "PoraKopatb-$ver.exe") -Force -ErrorAction Silently
 	--main-class ru.mcgl.launcher.Launcher `
 	--runtime-image $java `
 	--icon $icon `
+	--resource-dir $art `
 	--java-options "-Xmx512m" `
+	--win-dir-chooser `
 	--win-shortcut `
 	--win-menu `
 	--win-menu-group "Pora Kopatb" `
