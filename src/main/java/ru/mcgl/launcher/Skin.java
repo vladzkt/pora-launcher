@@ -24,6 +24,8 @@ final class Skin {
 
 	static final Color BG = new Color(0x0B0D11);
 	static final Color FIELD = new Color(0x10151C);
+	/** Правая колонка чуть светлее фона: так видно, что это отдельная часть окна. */
+	static final Color PANEL = new Color(0x11161E);
 	static final Color LINE = new Color(0x28313F);
 	static final Color TEXT = new Color(0xE2E6EE);
 	static final Color MUTED = new Color(0x8B95A8);
@@ -387,6 +389,66 @@ final class Skin {
 				g2.fillRoundRect(Math.max(0, run), 0, Math.min(120, w - Math.max(0, run)), h, h, h);
 			} else {
 				g2.fillRoundRect(0, 0, (int) (w * done), h, h, h);
+			}
+			g2.dispose();
+		}
+	}
+
+	/** Строка-ссылка: ведёт в браузер, потому в окне ей делать нечего кроме подчёркивания. */
+	static final class Link extends JComponent {
+		private final String text;
+		private final float size;
+		private final boolean bold;
+		private boolean hover;
+
+		Link(String text, float size, boolean bold, Runnable action) {
+			this.text = text;
+			this.size = size;
+			this.bold = bold;
+			setPreferredSize(new Dimension(0, Math.round(size) + 8));
+			setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+			addMouseListener(new MouseAdapter() {
+				@Override
+				public void mouseEntered(MouseEvent e) {
+					hover = true;
+					repaint();
+				}
+
+				@Override
+				public void mouseExited(MouseEvent e) {
+					hover = false;
+					repaint();
+				}
+
+				@Override
+				public void mouseReleased(MouseEvent e) {
+					if (contains(e.getPoint())) {
+						action.run();
+					}
+				}
+			});
+		}
+
+		@Override
+		protected void paintComponent(Graphics g) {
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+			g2.setFont(font(bold ? Font.BOLD : Font.PLAIN, size));
+			g2.setColor(hover ? GOLD : TEXT);
+			int base = g2.getFontMetrics().getAscent();
+			// Длинные заголовки новостей обрезаем: перенос в две строки ломает ровный список.
+			String show = text;
+			int room = getWidth();
+			if (g2.getFontMetrics().stringWidth(show) > room && room > 20) {
+				while (show.length() > 1 && g2.getFontMetrics().stringWidth(show + "…") > room) {
+					show = show.substring(0, show.length() - 1);
+				}
+				show = show + "…";
+			}
+			g2.drawString(show, 0, base + 2);
+			if (hover) {
+				int w = g2.getFontMetrics().stringWidth(show);
+				g2.fillRect(0, base + 4, w, 1);
 			}
 			g2.dispose();
 		}

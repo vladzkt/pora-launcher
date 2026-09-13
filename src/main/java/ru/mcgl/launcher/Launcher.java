@@ -17,6 +17,7 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JComponent;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JTextField;
@@ -40,12 +41,11 @@ import javax.swing.border.EmptyBorder;
 public final class Launcher {
 
 	private static final int WIDTH = 480;
+	private static final int SIDE = 372;
 	private static final int HEIGHT = 520;
 	// Ровно доля картинки 920x320 при ширине окна: так она видна целиком и без искажений.
 	private static final int HEADER = 167;
 	private static final int PAD = 30;
-	/** Насколько окно ниже, когда поле пароля спрятано. */
-	private static final int PASS_BLOCK = 73;
 
 	private final Path root = Files2.home();
 	private final Properties settings = new Properties();
@@ -56,6 +56,8 @@ public final class Launcher {
 	private Skin.GoldButton play;
 	private Skin.Check remember;
 	private JPanel passBlock;
+	private JPanel newsBox;
+	private JLabel onlineLine;
 	private Skin.Bar bar;
 	private JLabel status;
 	private Timer spinner;
@@ -96,9 +98,10 @@ public final class Launcher {
 
 	/** Рисуем окно в файл, чтобы посмотреть на него, никому его не показывая. */
 	private static void shot(String file) throws Exception {
+		SwingUtilities.invokeAndWait(() -> new Launcher().show());
+		Thread.sleep(2500);
 		SwingUtilities.invokeAndWait(() -> {
-			Launcher one = new Launcher();
-			one.show();
+			Launcher one = SHOWN;
 			one.frame.setVisible(false);
 			Component pane = one.frame.getContentPane();
 			BufferedImage image = new BufferedImage(pane.getWidth(), pane.getHeight(),
@@ -115,13 +118,17 @@ public final class Launcher {
 		System.exit(0);
 	}
 
+	/** Последнее открытое окно: нужно только съёмке. */
+	private static Launcher SHOWN;
+
 	private void show() {
+		SHOWN = this;
 		load();
 		frame = new JFrame("Пора Копать");
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		// Без системной рамки: своя кнопка закрытия лежит прямо на картинке.
 		frame.setUndecorated(true);
-		frame.setSize(WIDTH, HEIGHT);
+		frame.setSize(WIDTH + SIDE, HEIGHT);
 		frame.setLocationRelativeTo(null);
 		frame.setResizable(false);
 		Image icon = image("icon.png");
@@ -175,19 +182,18 @@ public final class Launcher {
 				new java.awt.Color(0x5E6878), Font.PLAIN, 11f), 16));
 
 		Skin.Header head = new Skin.Header(image("head.png"), WIDTH, HEADER);
-		head.setLayout(null);
-		Skin.WinButton close = new Skin.WinButton(true, () -> System.exit(0));
-		Skin.WinButton hide = new Skin.WinButton(false, () -> frame.setState(JFrame.ICONIFIED));
-		close.setBounds(WIDTH - 40, 8, 34, 26);
-		hide.setBounds(WIDTH - 78, 8, 34, 26);
-		head.add(close);
-		head.add(hide);
 		dragBy(head);
+
+		JPanel left = new JPanel(new BorderLayout());
+		left.setBackground(Skin.BG);
+		left.setPreferredSize(new Dimension(WIDTH, HEIGHT));
+		left.add(head, BorderLayout.NORTH);
+		left.add(body, BorderLayout.CENTER);
 
 		JPanel outer = new JPanel(new BorderLayout());
 		outer.setBackground(Skin.BG);
-		outer.add(head, BorderLayout.NORTH);
-		outer.add(body, BorderLayout.CENTER);
+		outer.add(left, BorderLayout.WEST);
+		outer.add(side(), BorderLayout.CENTER);
 		frame.setContentPane(outer);
 
 		// Кнопка гаснет, пока не введено и то и другое: меньше поводов увидеть отказ сайта.
@@ -206,13 +212,7 @@ public final class Launcher {
 			check.run();
 		});
 		check.run();
-		boolean known = !saved().isEmpty();
-		passBlock.setVisible(!known);
-		if (known) {
-			// Иначе под кнопкой остаётся пустое поле в высоту спрятанного пароля.
-			frame.setSize(WIDTH, HEIGHT - PASS_BLOCK);
-			frame.setLocationRelativeTo(null);
-		}
+		passBlock.setVisible(saved().isEmpty());
 
 		password.addActionListener(e -> go());
 		nick.addActionListener(e -> password.requestFocusInWindow());
@@ -221,6 +221,117 @@ public final class Launcher {
 		if (!nick.getText().isBlank() && saved().isEmpty()) {
 			password.requestFocusInWindow();
 		}
+		// Новости и онлайн тянем после окна: сайт может не ответить, а играть это не мешает.
+		new Thread(this::fillSide, "новости").start();
+	}
+
+	/** Правая колонка: новости, кто в игре и ссылки. */
+	private JPanel side() {
+		JPanel panel = new JPanel();
+		panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+		panel.setBackground(Skin.PANEL);
+		panel.setBorder(new EmptyBorder(10, 22, 18, 22));
+
+		JPanel bar = new JPanel(new BorderLayout());
+		bar.setBackground(Skin.PANEL);
+		bar.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+		JPanel keys = new JPanel();
+		keys.setBackground(Skin.PANEL);
+		keys.setLayout(new BoxLayout(keys, BoxLayout.X_AXIS));
+		Skin.WinButton hide = new Skin.WinButton(false, () -> frame.setState(JFrame.ICONIFIED));
+		Skin.WinButton close = new Skin.WinButton(true, () -> System.exit(0));
+		hide.setMaximumSize(new Dimension(34, 26));
+		close.setMaximumSize(new Dimension(34, 26));
+		keys.add(hide);
+		keys.add(Box.createHorizontalStrut(4));
+		keys.add(close);
+		bar.add(keys, BorderLayout.EAST);
+		dragBy(bar);
+		left(panel, bar);
+		left(panel, Box.createVerticalStrut(8));
+
+		left(panel, row(Skin.caption("Новости"), 16, Skin.PANEL));
+		left(panel, Box.createVerticalStrut(6));
+		newsBox = new JPanel();
+		newsBox.setLayout(new BoxLayout(newsBox, BoxLayout.Y_AXIS));
+		newsBox.setBackground(Skin.PANEL);
+		newsBox.setAlignmentX(0f);
+		newsBox.setMaximumSize(new Dimension(Integer.MAX_VALUE, 180));
+		left(newsBox, row(Skin.label("Загружаю…", Skin.MUTED, Font.PLAIN, 12f), 20, Skin.PANEL));
+		left(panel, newsBox);
+		left(panel, Box.createVerticalStrut(18));
+
+		left(panel, row(Skin.caption("Сейчас в игре"), 16, Skin.PANEL));
+		left(panel, Box.createVerticalStrut(4));
+		onlineLine = Skin.label(" ", Skin.MUTED, Font.PLAIN, 12f);
+		left(panel, row(onlineLine, 20, Skin.PANEL));
+
+		left(panel, Box.createVerticalGlue());
+		left(panel, link("Регистрация", () -> open(Site.BASE + "/register")));
+		left(panel, link("Вики сервера", () -> open(Site.BASE + "/wiki")));
+		left(panel, link("Карта мира", () -> open(Site.BASE + "/map")));
+		left(panel, link("Форум", () -> open(Site.BASE + "/forum")));
+		return panel;
+	}
+
+	/** Всё в колонке прижато к левому краю: BoxLayout иначе разъезжается. */
+	private static void left(JPanel to, java.awt.Component what) {
+		if (what instanceof JComponent piece) {
+			piece.setAlignmentX(0f);
+		}
+		to.add(what);
+	}
+
+	private Skin.Link link(String text, Runnable action) {
+		Skin.Link out = new Skin.Link(text, 13f, false, action);
+		out.setAlignmentX(0f);
+		out.setMaximumSize(new Dimension(Integer.MAX_VALUE, 22));
+		return out;
+	}
+
+	/** Открыть страницу в браузере игрока. */
+	private static void open(String url) {
+        try {
+            java.awt.Desktop.getDesktop().browse(java.net.URI.create(url));
+        } catch (Exception broken) {
+            // Нет браузера по умолчанию - молчим: это не повод мешать игре.
+        }
+	}
+
+	private void fillSide() {
+		Site.Home home = Site.home();
+		SwingUtilities.invokeLater(() -> {
+			newsBox.removeAll();
+			if (home == null) {
+				left(newsBox, row(Skin.label("Сайт не ответил", Skin.MUTED, Font.PLAIN, 12f), 20, Skin.PANEL));
+				onlineLine.setText("неизвестно");
+			} else {
+				if (home.news().isEmpty()) {
+					left(newsBox, row(Skin.label("Пока тихо", Skin.MUTED, Font.PLAIN, 12f), 20, Skin.PANEL));
+				}
+				for (Site.News one : home.news()) {
+					Skin.Link item = new Skin.Link(one.title(), 13f, false, () -> open(one.url()));
+					item.setAlignmentX(0f);
+					item.setMaximumSize(new Dimension(SIDE - 44, 24));
+					left(newsBox, item);
+				}
+				onlineLine.setText(text(home));
+			}
+			newsBox.revalidate();
+			newsBox.repaint();
+		});
+	}
+
+	/** Строка про онлайн: сколько людей и кто именно, если их немного. */
+	private static String text(Site.Home home) {
+		if (!home.online()) {
+			return "сервер спит";
+		}
+		if (home.players().isEmpty()) {
+			return "никого, будь первым";
+		}
+		String who = String.join(", ", home.players());
+		return home.players().size() + " " + (who.length() > 60 ? "" : "· " + who);
 	}
 
 	/** Показать поле пароля и поставить в него курсор: сохранённый вход больше не годится. */
@@ -229,7 +340,6 @@ public final class Launcher {
 			return;
 		}
 		passBlock.setVisible(true);
-		frame.setSize(WIDTH, HEIGHT);
 		passBlock.revalidate();
 		passBlock.repaint();
 		password.requestFocusInWindow();
@@ -267,8 +377,12 @@ public final class Launcher {
 
 	/** Строка во всю ширину: иначе подпись уезжает в центр. */
 	private static JPanel row(Component what, int height) {
+		return row(what, height, Skin.BG);
+	}
+
+	private static JPanel row(Component what, int height, java.awt.Color back) {
 		JPanel line = new JPanel(new BorderLayout());
-		line.setBackground(Skin.BG);
+		line.setBackground(back);
 		line.setMaximumSize(new Dimension(Integer.MAX_VALUE, height));
 		line.setPreferredSize(new Dimension(0, height));
 		line.add(what, BorderLayout.WEST);

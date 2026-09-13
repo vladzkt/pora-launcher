@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -41,6 +42,15 @@ public final class Site {
 		public String url() {
 			return BASE + "/pack/" + path;
 		}
+	}
+
+	/** Одна новость с сайта. */
+	public record News(String title, String url) {
+	}
+
+	/** Что показать в окне: новости, кто в игре и куда ведут кнопки. */
+	public record Home(java.util.List<News> news, boolean online, java.util.List<String> players,
+			String register, String wiki, String map, String forum) {
 	}
 
 	/** Что игрок должен иметь у себя, чтобы зайти на сервер. */
@@ -124,6 +134,35 @@ public final class Site {
 		}
 		return new Pack(json.get("version").getAsString(), json.get("minecraft").getAsString(),
 				json.get("fabric").getAsString(), files);
+	}
+
+	/**
+	 * Новости, онлайн и ссылки - одним запросом. Окно без этого работает, поэтому ждём недолго
+	 * и на любую осечку возвращаем пустое.
+	 */
+	public static Home home() {
+		try {
+			HttpURLConnection link = open(BASE + "/api/launcher/home", 8000);
+			if (link.getResponseCode() != 200) {
+				return null;
+			}
+			JsonObject json = JsonParser.parseString(read(link.getInputStream())).getAsJsonObject();
+			List<News> news = new ArrayList<>();
+			for (JsonElement e : json.getAsJsonArray("news")) {
+				JsonObject one = e.getAsJsonObject();
+				news.add(new News(one.get("title").getAsString(), one.get("url").getAsString()));
+			}
+			List<String> players = new ArrayList<>();
+			for (JsonElement e : json.getAsJsonArray("players")) {
+				players.add(e.getAsString());
+			}
+			JsonObject links = json.getAsJsonObject("links");
+			return new Home(news, json.get("online").getAsBoolean(), players,
+					links.get("register").getAsString(), links.get("wiki").getAsString(),
+					links.get("map").getAsString(), links.get("forum").getAsString());
+		} catch (Exception quiet) {
+			return null;
+		}
 	}
 
 	public static String text(String url) throws IOException {
