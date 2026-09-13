@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Русские надписи для мастера установки.
+
+  Файл называется «en», потому что jpackage жёстко зовёт light.exe с -cultures:en-us и
+  переименовать это нельзя. Мы просто кладём в английскую локаль русский текст: строки WiX
+  помечены как переопределяемые, поэтому наши перебивают его собственные.
+
+  Codepage 1251 и язык 1049 в main.wxs идут вместе: без них кириллица в базе установщика
+  превращается в вопросительные знаки.
+-->
+<WixLocalization Culture="en-us" xmlns="http://schemas.microsoft.com/wix/2006/localization" Codepage="1251">
+
+  <!-- Своё у jpackage -->
+  <String Id="message.install.dir.exist">Папка [INSTALLDIR] уже есть. Всё равно поставить в неё?</String>
+  <String Id="MainFeatureTitle">Основное</String>
+  <String Id="DowngradeErrorMessage">На компьютере уже стоит более новая версия «[ProductName]». Установка отменена.</String>
+  <String Id="DisallowUpgradeErrorMessage">На компьютере уже стоит другая версия «[ProductName]». Установка отменена.</String>
+  <String Id="ShortcutPromptDlg_Title">Пора Копать — установка</String>
+  <String Id="ShortcutPromptDlgTitle">{\PkTitle}Ярлыки</String>
+  <String Id="ShortcutPromptDlgBannerBitmap">WixUI_Bmp_Banner</String>
+  <String Id="ShortcutPromptDlgDescription">Где сделать ярлыки лаунчера.</String>
+  <String Id="ShortcutPromptDlgDesktopShortcutControlLabel">На рабочем столе</String>
+  <String Id="ShortcutPromptDlgStartMenuShortcutControlLabel">В меню «Пуск»</String>
+  <String Id="InstallDirNotEmptyDlg_Title">Пора Копать — установка</String>
+  <String Id="ContextMenuCommandLabel">Открыть в «[ProductName]»</String>
+
+  <!-- Кнопки -->
+  <String Id="WixUINext" Overridable="yes">&amp;Далее</String>
+  <String Id="WixUIBack" Overridable="yes">&amp;Назад</String>
+  <String Id="WixUICancel" Overridable="yes">Отмена</String>
+  <String Id="WixUIFinish" Overridable="yes">&amp;Готово</String>
+  <String Id="WixUIOK" Overridable="yes">ОК</String>
+  <String Id="WixUIYes" Overridable="yes">&amp;Да</String>
+  <String Id="WixUINo" Overridable="yes">&amp;Нет</String>
+  <String Id="WixUIRetry" Overridable="yes">&amp;Повторить</String>
+  <String Id="WixUIIgnore" Overridable="yes">&amp;Пропустить</String>
+  <String Id="WixUIPrint" Overridable="yes">&amp;Печать</String>
+
+  <!-- Приветствие -->
+  <String Id="WelcomeDlg_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="WelcomeDlgTitle" Overridable="yes">{\PkTitle}Установка лаунчера «Пора Копать»</String>
+  <String Id="WelcomeDlgDescription" Overridable="yes">{\PkBody}Лаунчер сам поставит игру, Fabric и моды и будет держать их свежими. Java внутри, отдельно ставить ничего не нужно.
+
+Нажми «Далее», чтобы продолжить.</String>
+
+  <String Id="WelcomeUpdateDlgDescriptionUpdate" Overridable="yes">{\PkBody}Лаунчер обновится до новой версии.
+
+Нажми «Далее», чтобы продолжить.</String>
+
+  <!-- Куда ставить -->
+  <String Id="InstallDirDlg_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="InstallDirDlgTitle" Overridable="yes">{\PkTitle}Куда поставить</String>
+  <String Id="InstallDirDlgDescription" Overridable="yes">{\PkBody}Обычно менять папку не нужно. Сама игра и моды лягут отдельно, в %APPDATA%\.porakopatb.</String>
+  <String Id="InstallDirDlgFolderLabel" Overridable="yes">Папка для лаунчера:</String>
+  <String Id="InstallDirDlgChange" Overridable="yes">&amp;Выбрать...</String>
+
+  <!-- Выбор папки -->
+  <String Id="BrowseDlg_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="BrowseDlgTitle" Overridable="yes">{\PkTitle}Выбор папки</String>
+  <String Id="BrowseDlgDescription" Overridable="yes">{\PkBody}Куда поставить лаунчер.</String>
+  <String Id="BrowseDlgPathLabel" Overridable="yes">&amp;Папка:</String>
+  <String Id="BrowseDlgComboLabel" Overridable="yes">&amp;Искать в:</String>
+  <String Id="BrowseDlgNewFolderTooltip" Overridable="yes">Создать папку</String>
+  <String Id="UITextNewFolder" Overridable="yes">Новая папка</String>
+
+  <!-- Готовность -->
+  <String Id="VerifyReadyDlg_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="VerifyReadyDlgInstallTitle" Overridable="yes">{\PkTitle}Всё готово</String>
+  <String Id="VerifyReadyDlgInstallText" Overridable="yes">{\PkBody}Нажми «Поставить», чтобы начать. «Назад» — если хочешь что-то поменять.</String>
+  <String Id="VerifyReadyDlgInstall" Overridable="yes">&amp;Поставить</String>
+  <String Id="VerifyReadyDlgRepairTitle" Overridable="yes">{\PkTitle}Починить установку</String>
+  <String Id="VerifyReadyDlgRepairText" Overridable="yes">{\PkBody}Нажми «Починить», чтобы восстановить лаунчер.</String>
+  <String Id="VerifyReadyDlgRepair" Overridable="yes">&amp;Починить</String>
+  <String Id="VerifyReadyDlgRemoveTitle" Overridable="yes">{\PkTitle}Удаление</String>
+  <String Id="VerifyReadyDlgRemoveText" Overridable="yes">{\PkBody}Нажми «Удалить», чтобы убрать лаунчер с компьютера. Игра и моды останутся.</String>
+  <String Id="VerifyReadyDlgRemove" Overridable="yes">&amp;Удалить</String>
+  <String Id="VerifyReadyDlgChangeTitle" Overridable="yes">{\PkTitle}Изменение установки</String>
+  <String Id="VerifyReadyDlgChangeText" Overridable="yes">{\PkBody}Нажми «Изменить», чтобы применить.</String>
+  <String Id="VerifyReadyDlgChange" Overridable="yes">&amp;Изменить</String>
+  <String Id="VerifyReadyDlgUpdateTitle" Overridable="yes">{\PkTitle}Обновление</String>
+  <String Id="VerifyReadyDlgUpdateText" Overridable="yes">{\PkBody}Нажми «Обновить», чтобы поставить новую версию.</String>
+  <String Id="VerifyReadyDlgUpdate" Overridable="yes">&amp;Обновить</String>
+
+  <!-- Ход установки -->
+  <String Id="ProgressDlg_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="ProgressDlgTitleInstalling" Overridable="yes">{\PkTitle}Ставим</String>
+  <String Id="ProgressDlgTextInstalling" Overridable="yes">{\PkBody}Секунду, копируем файлы.</String>
+  <String Id="ProgressDlgTitleRemoving" Overridable="yes">{\PkTitle}Удаляем</String>
+  <String Id="ProgressDlgTextRemoving" Overridable="yes">{\PkBody}Секунду, убираем файлы.</String>
+  <String Id="ProgressDlgTitleRepairing" Overridable="yes">{\PkTitle}Чиним</String>
+  <String Id="ProgressDlgTextRepairing" Overridable="yes">{\PkBody}Секунду, восстанавливаем файлы.</String>
+  <String Id="ProgressDlgTitleUpdating" Overridable="yes">{\PkTitle}Обновляем</String>
+  <String Id="ProgressDlgTextUpdating" Overridable="yes">{\PkBody}Секунду, ставим новую версию.</String>
+  <String Id="ProgressDlgTitleChanging" Overridable="yes">{\PkTitle}Меняем</String>
+  <String Id="ProgressDlgTextChanging" Overridable="yes">{\PkBody}Секунду, применяем изменения.</String>
+  <String Id="ProgressDlgStatusLabel" Overridable="yes">Сейчас:</String>
+
+  <!-- Конец -->
+  <String Id="ExitDialog_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="ExitDialogTitle" Overridable="yes">{\PkTitle}Готово</String>
+  <String Id="ExitDialogDescription" Overridable="yes">{\PkBody}Лаунчер поставлен. Ярлык «PoraKopatb» на рабочем столе и в меню «Пуск».
+
+Войди своим ником с сайта и жми «Играть» — остальное лаунчер сделает сам.</String>
+
+  <!-- Отмена и ошибки -->
+  <String Id="CancelDlg_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="CancelDlgText" Overridable="yes">Точно отменить установку?</String>
+  <String Id="UserExit_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="UserExitTitle" Overridable="yes">{\PkTitle}Установка отменена</String>
+  <String Id="UserExitDescription1" Overridable="yes">Установка отменена.</String>
+  <String Id="UserExitDescription2" Overridable="yes">Нажми «Готово», чтобы закрыть.</String>
+  <String Id="FatalError_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="FatalErrorTitle" Overridable="yes">{\PkTitle}Установка не удалась</String>
+  <String Id="FatalErrorDescription1" Overridable="yes">Что-то пошло не так, лаунчер не поставился.</String>
+  <String Id="FatalErrorDescription2" Overridable="yes">Нажми «Готово», чтобы закрыть. Напиши нам на porakopatb.com, разберёмся.</String>
+  <String Id="InvalidDirDlg_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="InvalidDirDlgText" Overridable="yes">В эту папку поставить нельзя. Выбери другую.</String>
+  <String Id="WaitForCostingDlg_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="WaitForCostingDlgText" Overridable="yes">Установщик занят. Подожди немного и попробуй снова.</String>
+  <String Id="PrepareDlg_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="PrepareDlgTitle" Overridable="yes">{\PkTitle}Подождите</String>
+  <String Id="PrepareDlgDescription" Overridable="yes">{\PkBody}Готовим установку.</String>
+  <String Id="ResumeDlg_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="ResumeDlgTitle" Overridable="yes">{\PkTitle}Продолжение установки</String>
+  <String Id="ResumeDlgDescription" Overridable="yes">{\PkBody}Прошлая установка не закончилась. Нажми «Поставить», чтобы доделать.</String>
+  <String Id="ResumeDlgInstall" Overridable="yes">&amp;Поставить</String>
+
+  <!-- Уже стоит: починить или удалить -->
+  <String Id="MaintenanceWelcomeDlg_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="MaintenanceWelcomeDlgTitle" Overridable="yes">{\PkTitle}Лаунчер уже стоит</String>
+  <String Id="MaintenanceWelcomeDlgDescription" Overridable="yes">{\PkBody}Можно починить установку или удалить лаунчер. Нажми «Далее».</String>
+  <String Id="MaintenanceTypeDlg_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="MaintenanceTypeDlgTitle" Overridable="yes">{\PkTitle}Что делаем</String>
+  <String Id="MaintenanceTypeDlgDescription" Overridable="yes">{\PkBody}Выбери действие.</String>
+  <String Id="MaintenanceTypeDlgRepairButton" Overridable="yes">&amp;Починить</String>
+  <String Id="MaintenanceTypeDlgRepairText" Overridable="yes">Восстановить испорченные или пропавшие файлы лаунчера.</String>
+  <String Id="MaintenanceTypeDlgRemoveButton" Overridable="yes">&amp;Удалить</String>
+  <String Id="MaintenanceTypeDlgRemoveText" Overridable="yes">Убрать лаунчер с компьютера. Игра и моды останутся.</String>
+  <String Id="MaintenanceTypeDlgChangeButton" Overridable="yes">&amp;Изменить</String>
+  <String Id="MaintenanceTypeDlgChangeText" Overridable="yes">Изменить установку.</String>
+
+  <!-- Файлы заняты -->
+  <String Id="FilesInUse_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="FilesInUseTitle" Overridable="yes">{\PkTitle}Лаунчер запущен</String>
+  <String Id="FilesInUseText" Overridable="yes">Закрой лаунчер и нажми «Повторить».</String>
+  <String Id="FilesInUseExit" Overridable="yes">&amp;Выйти</String>
+  <String Id="MsiRMFilesInUse_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="MsiRMFilesInUseTitle" Overridable="yes">{\PkTitle}Лаунчер запущен</String>
+  <String Id="MsiRMFilesInUseText" Overridable="yes">Установщик может закрыть его сам.</String>
+  <String Id="MsiRMFilesInUseUseRM" Overridable="yes">&amp;Закрыть и продолжить</String>
+  <String Id="MsiRMFilesInUseDontUseRM" Overridable="yes">&amp;Не закрывать</String>
+
+  <!-- Мало места -->
+  <String Id="OutOfDiskDlg_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="OutOfDiskDlgTitle" Overridable="yes">{\PkTitle}Мало места</String>
+  <String Id="OutOfDiskDlgDescription" Overridable="yes">{\PkBody}На диске не хватает места.</String>
+  <String Id="OutOfDiskDlgText" Overridable="yes">Освободи место и попробуй снова.</String>
+  <String Id="OutOfRbDiskDlg_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="OutOfRbDiskDlgTitle" Overridable="yes">{\PkTitle}Мало места</String>
+  <String Id="OutOfRbDiskDlgDescription" Overridable="yes">{\PkBody}Места не хватает даже на откат установки.</String>
+  <String Id="ErrorDlg_Title" Overridable="yes">Пора Копать — установка</String>
+
+</WixLocalization>

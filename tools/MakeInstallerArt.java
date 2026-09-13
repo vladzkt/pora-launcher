@@ -1,5 +1,6 @@
 import java.awt.Color;
 import java.awt.Font;
+import java.awt.GradientPaint;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
@@ -12,14 +13,16 @@ import javax.imageio.ImageIO;
  * Запускать из корня репозитория, это делает tools/pack.ps1:
  *     java tools/MakeInstallerArt.java build/wixres
  *
- * Свои надписи мастер печатает поверх чёрным, поэтому под текст оставляем светлое поле, а нашу
- * тёмную картинку держим сбоку. Иначе текст на ней не читается.
+ * Обе картинки тёмные: свои надписи мастер печатает прямо поверх них, а цвет этих надписей мы
+ * задаём в main.wxs. Светлым остаётся только середина средних страниц - её оформить нельзя,
+ * там Windows рисует поля и кнопки по-своему.
  */
 public final class MakeInstallerArt {
 
-	private static final Color LIGHT = new Color(0xF5F6F8);
-	private static final Color GOLD = new Color(0xC98A12);
-	private static final Color INK = new Color(0x1B2027);
+	private static final Color BG = new Color(0x0B0D11);
+	private static final Color PANEL = new Color(0x12161D);
+	private static final Color GOLD = new Color(0xF0B53F);
+	private static final Color PALE = new Color(0xDDE3EC);
 	private static final String ART = "src/main/resources/ru/mcgl/launcher/head.png";
 	private static final String ICON = "src/main/resources/ru/mcgl/launcher/icon.png";
 
@@ -33,11 +36,14 @@ public final class MakeInstallerArt {
 		System.out.println("Картинки мастера: " + out);
 	}
 
-	/** Полоса сверху на страницах мастера: слева его текст, справа наш значок. */
+	/**
+	 * Полоса сверху на средних страницах. Тёмная: свой заголовок мастер печатает прямо на ней,
+	 * и мы красим его золотом - на светлой полосе это не читалось бы.
+	 */
 	private static void banner(BufferedImage icon, String out) throws Exception {
 		BufferedImage image = new BufferedImage(493, 58, BufferedImage.TYPE_INT_RGB);
 		Graphics2D g = nice(image);
-		g.setColor(LIGHT);
+		g.setColor(BG);
 		g.fillRect(0, 0, 493, 58);
 		g.drawImage(icon, 493 - 52, 7, 44, 44, null);
 		g.setColor(GOLD);
@@ -47,13 +53,13 @@ public final class MakeInstallerArt {
 	}
 
 	/**
-	 * Первая и последняя страницы. Слева наша картинка, справа светлое поле: свой текст мастер
-	 * печатает начиная примерно со 140-го пикселя, поэтому полосу держим уже.
+	 * Первая и последняя страницы: там эта картинка занимает всё окно целиком, поэтому фон у
+	 * них какой нарисуем. Рисуем тёмный, а надписи мастера красим светлым в main.wxs.
 	 */
 	private static void dialog(BufferedImage art, String out) throws Exception {
 		BufferedImage image = new BufferedImage(493, 312, BufferedImage.TYPE_INT_RGB);
 		Graphics2D g = nice(image);
-		g.setColor(LIGHT);
+		g.setColor(PANEL);
 		g.fillRect(0, 0, 493, 312);
 
 		int side = 164;
@@ -69,12 +75,17 @@ public final class MakeInstallerArt {
 		g.setColor(GOLD);
 		g.fillRect(side, 0, 2, 312);
 
-		g.setColor(INK);
-		g.setFont(new Font("Segoe UI", Font.BOLD, 20));
-		g.drawString("ПОРА КОПАТЬ", side + 22, 250);
-		g.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+		// Правое поле темнеет книзу: там мастер печатает свой текст, и ровная заливка выглядит
+		// казённо.
+		g.setPaint(new GradientPaint(0, 0, PANEL, 0, 312, BG));
+		g.fillRect(side + 2, 0, 493 - side - 2, 312);
+
 		g.setColor(GOLD);
-		g.drawString("porakopatb.com", side + 23, 270);
+		g.setFont(new Font("Segoe UI", Font.BOLD, 19));
+		g.drawString("ПОРА КОПАТЬ", side + 24, 268);
+		g.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+		g.setColor(PALE);
+		g.drawString("porakopatb.com", side + 25, 286);
 
 		g.dispose();
 		ImageIO.write(image, "bmp", new File(out + "/dialog.bmp"));

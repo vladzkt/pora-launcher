@@ -16,7 +16,8 @@
     <?define JpInstallScope="perUser"?>
   <?endif?>
 
-  <?define JpProductLanguage=1033 ?>
+  <!-- 1049 - русский: без него кириллица в базе установщика превращается в вопросы. -->
+  <?define JpProductLanguage=1049 ?>
   <?define JpInstallerVersion=200 ?>
   <?define JpCompressedMsi=yes ?>
 
@@ -111,6 +112,15 @@
     <!-- Наши картинки вместо стандартных синих: пути подставляет tools/pack.ps1. -->
     <WixVariable Id="WixUIBannerBmp" Value="@ART@\banner.bmp"/>
     <WixVariable Id="WixUIDialogBmp" Value="@ART@\dialog.bmp"/>
+
+    <!--
+      Свои начертания: картинки у мастера тёмные, а он печатает поверх них чёрным. Заголовки
+      делаем золотыми, пояснения светлыми - в строках они помечены как {\PkTitle} и {\PkBody}.
+    -->
+    <UI>
+      <TextStyle Id="PkTitle" FaceName="Segoe UI" Size="12" Bold="yes" Red="240" Green="181" Blue="63"/>
+      <TextStyle Id="PkBody" FaceName="Segoe UI" Size="9" Red="221" Green="227" Blue="236"/>
+    </UI>
 
     <UIRef Id="JpUI"/>
 

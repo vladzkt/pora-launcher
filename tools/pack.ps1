@@ -50,6 +50,8 @@ Remove-Item $art -Recurse -Force -ErrorAction SilentlyContinue
 if ($LASTEXITCODE -ne 0) { throw "Не нарисовались картинки мастера" }
 (Get-Content (Join-Path $PSScriptRoot "installer\main.wxs.in") -Raw -Encoding UTF8).Replace("@ART@", $art) |
 	Set-Content (Join-Path $art "main.wxs") -Encoding UTF8
+# Русские надписи мастера. Имя файла английское не по ошибке - см. комментарий внутри.
+Copy-Item (Join-Path $PSScriptRoot "installer\MsiInstallerStrings_en.wxl") $art
 
 & "$java\bin\jpackage.exe" `
 	--type exe `
