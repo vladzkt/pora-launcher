@@ -1,6 +1,12 @@
 package ru.mcgl.launcher;
 
 import java.awt.BorderLayout;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.Image;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import javax.imageio.ImageIO;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Font;
@@ -57,6 +63,25 @@ public final class Launcher {
 			console(args);
 			return;
 		}
+		if (args.length > 0 && "--shot".equals(args[0])) {
+			// Рисуем окно в файл, чтобы посмотреть на него, никому его не показывая.
+			SwingUtilities.invokeAndWait(() -> {
+				Launcher one = new Launcher();
+				one.show();
+				one.frame.setVisible(false);
+				BufferedImage shot = new BufferedImage(one.frame.getContentPane().getWidth(),
+						one.frame.getContentPane().getHeight(), BufferedImage.TYPE_INT_RGB);
+				Graphics g = shot.getGraphics();
+				one.frame.getContentPane().printAll(g);
+				g.dispose();
+				try {
+					ImageIO.write(shot, "png", new java.io.File(args.length > 1 ? args[1] : "launcher.png"));
+				} catch (IOException broken) {
+					System.out.println("не записалось: " + broken);
+				}
+			});
+			System.exit(0);
+		}
 		SwingUtilities.invokeLater(() -> new Launcher().show());
 	}
 
@@ -92,34 +117,25 @@ public final class Launcher {
 
 		frame = new JFrame("Пора Копать");
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-		frame.setSize(420, 330);
+		frame.setSize(460, 432);
 		frame.setLocationRelativeTo(null);
 		frame.setResizable(false);
+		Image windowIcon = image("icon.png");
+		if (windowIcon != null) {
+			frame.setIconImage(windowIcon);
+		}
 
 		JPanel panel = new JPanel(new GridBagLayout());
 		panel.setBackground(BG);
-		panel.setBorder(BorderFactory.createEmptyBorder(22, 26, 18, 26));
+		panel.setBorder(BorderFactory.createEmptyBorder(0, 26, 18, 26));
 		GridBagConstraints c = new GridBagConstraints();
 		c.gridx = 0;
 		c.fill = GridBagConstraints.HORIZONTAL;
 		c.weightx = 1;
 
-		JLabel title = new JLabel("ПОРА КОПАТЬ");
-		title.setForeground(GOLD);
-		title.setFont(title.getFont().deriveFont(Font.BOLD, 22f));
-		c.gridy = 0;
-		c.insets = new Insets(0, 0, 2, 0);
-		panel.add(title, c);
-
-		JLabel sub = new JLabel("Гриф-сервер Minecraft 1.21.1");
-		sub.setForeground(MUTED);
-		c.gridy = 1;
-		c.insets = new Insets(0, 0, 18, 0);
-		panel.add(sub, c);
-
 		nick = field(new JTextField(settings.getProperty("nick", "")));
 		c.gridy = 2;
-		c.insets = new Insets(0, 0, 8, 0);
+		c.insets = new Insets(18, 0, 8, 0);
 		panel.add(labelled("Ник", nick), c);
 
 		password = new JPasswordField();
@@ -128,6 +144,10 @@ public final class Launcher {
 		panel.add(labelled("Пароль", password), c);
 
 		play = new JButton("Играть");
+		// Оформление Windows рисует кнопку по-своему и заданный фон игнорирует. Простая
+		// отрисовка слушается цветов, а нам нужна именно золотая кнопка, как на сайте.
+		play.setUI(new javax.swing.plaf.basic.BasicButtonUI());
+		play.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
 		play.setBackground(GOLD);
 		play.setForeground(new Color(0x2A1C02));
 		play.setFocusPainted(false);
@@ -157,11 +177,53 @@ public final class Launcher {
 		c.weighty = 1;
 		panel.add(Box.createVerticalGlue(), c);
 
-		frame.setContentPane(panel);
+		JPanel outer = new JPanel(new BorderLayout());
+		outer.setBackground(BG);
+		outer.add(new Header(image("head.png")), BorderLayout.NORTH);
+		outer.add(panel, BorderLayout.CENTER);
+		frame.setContentPane(outer);
 		frame.getRootPane().setDefaultButton(play);
 		frame.setVisible(true);
 		if (!nick.getText().isBlank()) {
 			password.requestFocusInWindow();
+		}
+	}
+
+	/** Картинка из ресурсов рядом с классом; если её нет, окно просто останется без неё. */
+	private static Image image(String name) {
+		try (var in = Launcher.class.getResourceAsStream(name)) {
+			return in == null ? null : ImageIO.read(in);
+		} catch (IOException missing) {
+			return null;
+		}
+	}
+
+	/** Шапка окна: картинка во всю ширину и название поверх её тёмной половины. */
+	private static final class Header extends JPanel {
+		private final Image picture;
+
+		private Header(Image picture) {
+			this.picture = picture;
+			setPreferredSize(new Dimension(460, 160));
+			setBackground(BG);
+		}
+
+		@Override
+		protected void paintComponent(Graphics g) {
+			super.paintComponent(g);
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+			if (picture != null) {
+				g2.drawImage(picture, 0, 0, getWidth(), getHeight(), null);
+			}
+			g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+			g2.setColor(GOLD);
+			g2.setFont(getFont().deriveFont(Font.BOLD, 24f));
+			g2.drawString("ПОРА КОПАТЬ", 26, 74);
+			g2.setColor(TEXT);
+			g2.setFont(getFont().deriveFont(12f));
+			g2.drawString("Гриф-сервер Minecraft 1.21.1", 27, 96);
+			g2.dispose();
 		}
 	}
 
