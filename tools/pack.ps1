@@ -1,7 +1,11 @@
-# Собирает установщик PoraKopatb-1.0.0.exe и тот же лаунчер архивом.
+# Собирает установщик PoraKopatb-<версия>.exe и тот же лаунчер архивом.
 #
 # Запускать из корня репозитория:
 #     powershell -ExecutionPolicy Bypass -File tools\pack.ps1
+#
+# Версия берётся из build.gradle - её надо поднимать при каждом выпуске: установщик с большим
+# номером сам заменяет собой предыдущий, а с тем же номером Windows считает его повторной
+# установкой и предлагает «изменить или удалить».
 #
 # Строки установщика латиницей: WiX 3.14 валится на кириллице в vendor и меню.
 # Нужен сам WiX 3.14 (candle.exe/light.exe): путь берётся из переменной WIX_BIN, иначе
@@ -15,6 +19,10 @@ $root = Split-Path -Parent $PSScriptRoot
 $java = "M:\MINE\runtime\java-runtime-delta\windows\java-runtime-delta"
 $icon = Join-Path $root "src\main\resources\ru\mcgl\launcher\icon.ico"
 
+$line = Select-String -Path (Join-Path $root "build.gradle") -Pattern "^version\s*=\s*'([^']+)'"
+if (-not $line) { throw "Не нашёл версию в build.gradle" }
+$ver = $line.Matches[0].Groups[1].Value
+
 $wix = $env:WIX_BIN
 if (-not $wix) { $wix = Join-Path $PSScriptRoot "wix" }
 if (-not (Test-Path (Join-Path $wix "candle.exe"))) {
@@ -22,7 +30,7 @@ if (-not (Test-Path (Join-Path $wix "candle.exe"))) {
 }
 $env:PATH = "$wix;$env:PATH"
 
-$jar = Join-Path $root "build\libs\pora-launcher-1.0.0-all.jar"
+$jar = Join-Path $root "build\libs\pora-launcher-$ver-all.jar"
 if (-not (Test-Path $jar)) { throw "Сначала .\gradlew fatJar" }
 
 # jpackage забирает всю папку целиком, поэтому держим в ней ровно один джарник.
@@ -32,16 +40,16 @@ New-Item -ItemType Directory -Path $input | Out-Null
 Copy-Item $jar $input
 
 $dest = Join-Path $root "build\setup"
-Remove-Item (Join-Path $dest "PoraKopatb-1.0.0.exe") -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $dest "PoraKopatb-$ver.exe") -Force -ErrorAction SilentlyContinue
 
 & "$java\bin\jpackage.exe" `
 	--type exe `
 	--name PoraKopatb `
-	--app-version 1.0.0 `
+	--app-version $ver `
 	--vendor "porakopatb.com" `
 	--description "Pora Kopatb launcher" `
 	--input $input `
-	--main-jar pora-launcher-1.0.0-all.jar `
+	--main-jar "pora-launcher-$ver-all.jar" `
 	--main-class ru.mcgl.launcher.Launcher `
 	--runtime-image $java `
 	--icon $icon `
@@ -58,17 +66,17 @@ Remove-Item $app -Recurse -Force -ErrorAction SilentlyContinue
 & "$java\bin\jpackage.exe" `
 	--type app-image `
 	--name PoraKopatb `
-	--app-version 1.0.0 `
+	--app-version $ver `
 	--input $input `
-	--main-jar pora-launcher-1.0.0-all.jar `
+	--main-jar "pora-launcher-$ver-all.jar" `
 	--main-class ru.mcgl.launcher.Launcher `
 	--runtime-image $java `
 	--icon $icon `
 	--java-options "-Xmx512m" `
 	--dest $app
 
-$zip = Join-Path $root "build\PoraKopatb-1.0.0.zip"
+$zip = Join-Path $root "build\PoraKopatb-$ver.zip"
 Remove-Item $zip -Force -ErrorAction SilentlyContinue
 Compress-Archive -Path (Join-Path $app "PoraKopatb") -DestinationPath $zip
 
-Get-Item (Join-Path $dest "PoraKopatb-1.0.0.exe"), $zip | Select-Object Name, Length, LastWriteTime
+Get-Item (Join-Path $dest "PoraKopatb-$ver.exe"), $zip | Select-Object Name, Length, LastWriteTime
