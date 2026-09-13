@@ -109,6 +109,8 @@ public final class Launcher {
 		load();
 		frame = new JFrame("Пора Копать");
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		// Без системной рамки: своя кнопка закрытия лежит прямо на картинке.
+		frame.setUndecorated(true);
 		frame.setSize(WIDTH, HEIGHT);
 		frame.setLocationRelativeTo(null);
 		frame.setResizable(false);
@@ -149,9 +151,19 @@ public final class Launcher {
 
 		body.add(row(Skin.label("porakopatb.com", new java.awt.Color(0x5E6878), Font.PLAIN, 11f), 16));
 
+		Skin.Header head = new Skin.Header(image("head.png"), WIDTH, HEADER);
+		head.setLayout(null);
+		Skin.WinButton close = new Skin.WinButton(true, () -> System.exit(0));
+		Skin.WinButton hide = new Skin.WinButton(false, () -> frame.setState(JFrame.ICONIFIED));
+		close.setBounds(WIDTH - 40, 8, 34, 26);
+		hide.setBounds(WIDTH - 78, 8, 34, 26);
+		head.add(close);
+		head.add(hide);
+		dragBy(head);
+
 		JPanel outer = new JPanel(new BorderLayout());
 		outer.setBackground(Skin.BG);
-		outer.add(new Skin.Header(image("head.png"), WIDTH, HEADER), BorderLayout.NORTH);
+		outer.add(head, BorderLayout.NORTH);
 		outer.add(body, BorderLayout.CENTER);
 		frame.setContentPane(outer);
 
@@ -169,6 +181,29 @@ public final class Launcher {
 		if (!nick.getText().isBlank()) {
 			password.requestFocusInWindow();
 		}
+	}
+
+	/** Окно без рамки само не таскается - возим его за шапку. */
+	private void dragBy(Component what) {
+		java.awt.event.MouseAdapter hand = new java.awt.event.MouseAdapter() {
+			private java.awt.Point grab;
+
+			@Override
+			public void mousePressed(java.awt.event.MouseEvent e) {
+				grab = e.getPoint();
+			}
+
+			@Override
+			public void mouseDragged(java.awt.event.MouseEvent e) {
+				if (grab == null) {
+					return;
+				}
+				java.awt.Point at = frame.getLocation();
+				frame.setLocation(at.x + e.getX() - grab.x, at.y + e.getY() - grab.y);
+			}
+		};
+		what.addMouseListener(hand);
+		what.addMouseMotionListener(hand);
 	}
 
 	/** BoxLayout растягивает всё по высоте, поэтому ростом каждой полосы правим вручную. */

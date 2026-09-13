@@ -80,12 +80,73 @@ final class Skin {
 
 			g2.setFont(font(Font.BOLD, 27f));
 			g2.setColor(new Color(0, 0, 0, 170));
-			g2.drawString("ПОРА КОПАТЬ", 29, h - 47);
+			g2.drawString("ПОРА КОПАТЬ", 29, h - 65);
 			g2.setColor(GOLD);
-			g2.drawString("ПОРА КОПАТЬ", 28, h - 48);
+			g2.drawString("ПОРА КОПАТЬ", 28, h - 66);
 			g2.setFont(font(Font.PLAIN, 12.5f));
 			g2.setColor(TEXT);
-			g2.drawString("Гриф-сервер Minecraft 1.21.1", 29, h - 26);
+			g2.drawString("Уникальный гриф-сервер Minecraft 1.21.1", 29, h - 44);
+			g2.setColor(GOLD);
+			g2.drawString("Играй и зарабатывай реальные деньги", 29, h - 24);
+			g2.dispose();
+		}
+	}
+
+	/**
+	 * Кнопки окна: рамку системы мы убрали, поэтому «свернуть» и «закрыть» рисуем сами
+	 * и кладём прямо на картинку.
+	 */
+	static final class WinButton extends JComponent {
+		private final boolean close;
+		private boolean hover;
+
+		WinButton(boolean close, Runnable action) {
+			this.close = close;
+			setPreferredSize(new Dimension(34, 26));
+			setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+			addMouseListener(new MouseAdapter() {
+				@Override
+				public void mouseEntered(MouseEvent e) {
+					hover = true;
+					repaint();
+				}
+
+				@Override
+				public void mouseExited(MouseEvent e) {
+					hover = false;
+					repaint();
+				}
+
+				@Override
+				public void mouseReleased(MouseEvent e) {
+					if (contains(e.getPoint())) {
+						action.run();
+					}
+				}
+			});
+		}
+
+		@Override
+		protected void paintComponent(Graphics g) {
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			int w = getWidth();
+			int h = getHeight();
+			if (hover) {
+				// Красным гасим только крестик: так понятнее, какая кнопка чем кончится.
+				g2.setColor(close ? new Color(0xD9, 0x3B, 0x2F, 220) : new Color(255, 255, 255, 45));
+				g2.fillRoundRect(0, 0, w, h, 8, 8);
+			}
+			g2.setColor(Color.WHITE);
+			g2.setStroke(new java.awt.BasicStroke(1.6f, java.awt.BasicStroke.CAP_ROUND, 0));
+			int cx = w / 2;
+			int cy = h / 2;
+			if (close) {
+				g2.drawLine(cx - 5, cy - 5, cx + 5, cy + 5);
+				g2.drawLine(cx + 5, cy - 5, cx - 5, cy + 5);
+			} else {
+				g2.drawLine(cx - 5, cy + 4, cx + 5, cy + 4);
+			}
 			g2.dispose();
 		}
 	}
