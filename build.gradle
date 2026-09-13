@@ -1,0 +1,44 @@
+// Лаунчер «Пора Копать». Обычное приложение на Java: чем меньше вокруг него слоёв,
+// тем меньше поводов не запуститься у человека, который просто хочет поиграть.
+plugins {
+    id 'application'
+}
+
+group = 'ru.mcgl'
+version = '1.0.0'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Единственная зависимость: разбор чужого JSON. Свой парсер тут был бы источником ошибок,
+    // а формат версий Minecraft меняется от версии к версии.
+    implementation 'com.google.code.gson:gson:2.11.0'
+}
+
+java {
+    // Та же Java, что нужна самой игре 1.21.1, и она же уедет в готовый exe.
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+application {
+    mainClass = 'ru.mcgl.launcher.Launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+// Все классы и зависимости одним джарником: так его проще скормить jpackage.
+tasks.register('fatJar', Jar) {
+    archiveClassifier = 'all'
+    manifest {
+        attributes 'Main-Class': application.mainClass
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from sourceSets.main.output
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+}
