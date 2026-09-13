@@ -28,7 +28,11 @@ import javax.swing.border.EmptyBorder;
  * Лаунчер «Пора Копать».
  *
  * Одно окно: ник, пароль, кнопка. Всё остальное - скачивание игры, Fabric и модов - он делает
- * сам и показывает полосой. Пароль никуда не сохраняется, ник запоминается ради удобства.
+ * сам и показывает полосой.
+ *
+ * Пароль на диск не ложится никогда. С галочкой «запомнить» сайт выдаёт отдельный долгий ключ
+ * для этой машины - он и хранится рядом с ником; годится только для входа в лаунчер и пропадает,
+ * когда игрок меняет пароль.
  *
  * Для проверки без окна: {@code --check} печатает список сборки, {@code --install} доводит
  * установку до конца и ничего не запускает, {@code --shot файл.png} рисует окно в файл.
@@ -48,6 +52,7 @@ public final class Launcher {
 	private JTextField nick;
 	private JPasswordField password;
 	private Skin.GoldButton play;
+	private Skin.Check remember;
 	private Skin.Bar bar;
 	private JLabel status;
 	private Timer spinner;
@@ -135,7 +140,11 @@ public final class Launcher {
 		body.add(row(Skin.caption("Пароль"), 16));
 		body.add(Box.createVerticalStrut(5));
 		body.add(capped(new Skin.Field(password), 40));
-		body.add(Box.createVerticalStrut(20));
+		body.add(Box.createVerticalStrut(12));
+
+		remember = new Skin.Check("Запомнить пароль", !saved().isEmpty());
+		body.add(capped(remember, 20));
+		body.add(Box.createVerticalStrut(16));
 
 		play = new Skin.GoldButton("Играть", this::go);
 		body.add(capped(play, 44));
@@ -168,17 +177,29 @@ public final class Launcher {
 		frame.setContentPane(outer);
 
 		// Кнопка гаснет, пока не введено и то и другое: меньше поводов увидеть отказ сайта.
-		Runnable check = () -> play.setOn(!working
-				&& !nick.getText().trim().isEmpty() && password.getPassword().length > 0);
+		// С сохранённым входом пароль не нужен - там уже есть чем войти.
+		Runnable check = () -> play.setOn(!working && !nick.getText().trim().isEmpty()
+				&& (password.getPassword().length > 0 || !saved().isEmpty()));
 		Skin.onType(nick, check);
 		Skin.onType(password, check);
+		// Снял галочку - забываем ключ сразу, не дожидаясь следующего входа.
+		remember.onChange(() -> {
+			if (!remember.isOn()) {
+				settings.remove("device");
+				save();
+			}
+			check.run();
+		});
 		check.run();
+		if (!saved().isEmpty()) {
+			status.setText("Пароль сохранён - жми «Играть»");
+		}
 
 		password.addActionListener(e -> go());
 		nick.addActionListener(e -> password.requestFocusInWindow());
 
 		frame.setVisible(true);
-		if (!nick.getText().isBlank()) {
+		if (!nick.getText().isBlank() && saved().isEmpty()) {
 			password.requestFocusInWindow();
 		}
 	}
@@ -232,10 +253,16 @@ public final class Launcher {
 		}
 	}
 
+	/** Ключ «запомнить пароль» для этой машины; пустая строка, если его нет. */
+	private String saved() {
+		return settings.getProperty("device", "");
+	}
+
 	private void go() {
 		String who = nick.getText().trim();
 		String secret = new String(password.getPassword());
-		if (who.isEmpty() || secret.isEmpty()) {
+		String key = saved();
+		if (who.isEmpty() || (secret.isEmpty() && key.isEmpty())) {
 			say("Введи ник и пароль.");
 			return;
 		}
@@ -249,8 +276,14 @@ public final class Launcher {
 
 		new Thread(() -> {
 			try {
-				Site.Account account = Site.login(who, secret);
+				// Пароль набран - идём по нему: игрок мог сменить учётную запись.
+				Site.Account account = secret.isEmpty()
+						? Site.loginSaved(key)
+						: Site.login(who, secret, remember.isOn());
 				settings.setProperty("nick", account.nick());
+				if (!account.device().isEmpty()) {
+					settings.setProperty("device", account.device());
+				}
 				save();
 
 				Site.Pack pack = Site.pack();
@@ -272,6 +305,12 @@ public final class Launcher {
 				System.exit(0);
 			} catch (Exception broken) {
 				String message = broken.getMessage() == null ? broken.toString() : broken.getMessage();
+				// Ключ протух или его отозвали сменой пароля - выбрасываем и просим пароль.
+				if (message.contains("Сохранённый вход")) {
+					settings.remove("device");
+					save();
+					SwingUtilities.invokeLater(() -> remember.set(false));
+				}
 				SwingUtilities.invokeLater(() -> {
 					if (spinner != null) {
 						spinner.stop();

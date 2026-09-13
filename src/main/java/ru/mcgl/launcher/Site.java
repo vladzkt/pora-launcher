@@ -32,8 +32,8 @@ public final class Site {
 	public static final String BASE = "https://porakopatb.com";
 	private static final String AGENT = "PoraKopatb-Launcher/1.0";
 
-	/** Кто вошёл: ник, разовый ключ для игры и адрес скина. */
-	public record Account(String nick, String token, String skin) {
+	/** Кто вошёл: ник, разовый ключ для игры, адрес скина и ключ «запомнить», если просили. */
+	public record Account(String nick, String token, String skin, String device) {
 	}
 
 	/** Один файл сборки: куда положить, сколько весит и какая у него сумма. */
@@ -59,11 +59,31 @@ public final class Site {
 		return link;
 	}
 
-	public static Account login(String nick, String password) throws IOException {
+	/**
+	 * Вход по нику и паролю. Если {@code remember} - сайт вернёт ещё и долгий ключ для этой
+	 * машины, чтобы в следующий раз пароль не спрашивать.
+	 */
+	public static Account login(String nick, String password, boolean remember) throws IOException {
 		JsonObject body = new JsonObject();
 		body.addProperty("nick", nick);
 		body.addProperty("password", password);
+		if (remember) {
+			body.addProperty("remember", true);
+		}
+		return ask(body);
+	}
 
+	/**
+	 * Вход по сохранённому ключу. Пароль на диске не лежит: у нас только этот ключ, он годится
+	 * лишь для лаунчера и пропадает, когда игрок меняет пароль.
+	 */
+	public static Account loginSaved(String device) throws IOException {
+		JsonObject body = new JsonObject();
+		body.addProperty("device", device);
+		return ask(body);
+	}
+
+	private static Account ask(JsonObject body) throws IOException {
 		HttpURLConnection link = open(BASE + "/api/launcher/login", 20000);
 		link.setRequestMethod("POST");
 		link.setDoOutput(true);
@@ -78,7 +98,8 @@ public final class Site {
 			throw new IOException(reason(json.has("error") ? json.get("error").getAsString() : ""));
 		}
 		return new Account(json.get("nick").getAsString(), json.get("token").getAsString(),
-				json.has("skin") ? json.get("skin").getAsString() : "");
+				json.has("skin") ? json.get("skin").getAsString() : "",
+				json.has("device") ? json.get("device").getAsString() : "");
 	}
 
 	/** Ошибку сайта показываем по-человечески: код для нас, строка для игрока. */
@@ -87,6 +108,7 @@ public final class Site {
 			case "bad_credentials" -> "Ник или пароль не подошли.";
 			case "banned" -> "Эта учётная запись заблокирована.";
 			case "too_often" -> "Слишком много попыток. Подожди несколько минут.";
+			case "device_gone" -> "Сохранённый вход больше не годится - введи пароль.";
 			default -> "Сайт ответил отказом. Попробуй позже.";
 		};
 	}

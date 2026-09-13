@@ -275,6 +275,81 @@ final class Skin {
 		}
 	}
 
+	/** Галочка: системная в тёмном окне выглядит белым пятном, поэтому своя. */
+	static final class Check extends JComponent {
+		private final String text;
+		private boolean on;
+		private boolean hover;
+
+		Check(String text, boolean on) {
+			this.text = text;
+			this.on = on;
+			setPreferredSize(new Dimension(0, 20));
+			setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+			addMouseListener(new MouseAdapter() {
+				@Override
+				public void mouseEntered(MouseEvent e) {
+					hover = true;
+					repaint();
+				}
+
+				@Override
+				public void mouseExited(MouseEvent e) {
+					hover = false;
+					repaint();
+				}
+
+				@Override
+				public void mouseReleased(MouseEvent e) {
+					if (contains(e.getPoint())) {
+						set(!Check.this.on);
+					}
+				}
+			});
+		}
+
+		boolean isOn() {
+			return on;
+		}
+
+		void set(boolean value) {
+			on = value;
+			repaint();
+			for (Runnable listener : listeners) {
+				listener.run();
+			}
+		}
+
+		private final java.util.List<Runnable> listeners = new java.util.ArrayList<>();
+
+		void onChange(Runnable what) {
+			listeners.add(what);
+		}
+
+		@Override
+		protected void paintComponent(Graphics g) {
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+			int box = 15;
+			int top = (getHeight() - box) / 2;
+			g2.setColor(on ? GOLD : FIELD);
+			g2.fillRoundRect(0, top, box, box, 4, 4);
+			g2.setColor(on ? GOLD : (hover ? MUTED : LINE));
+			g2.drawRoundRect(0, top, box - 1, box - 1, 4, 4);
+			if (on) {
+				g2.setColor(INK);
+				g2.setStroke(new java.awt.BasicStroke(2f, java.awt.BasicStroke.CAP_ROUND, 0));
+				g2.drawLine(4, top + 8, 6, top + 11);
+				g2.drawLine(6, top + 11, 11, top + 4);
+			}
+			g2.setFont(font(Font.PLAIN, 12f));
+			g2.setColor(hover ? TEXT : MUTED);
+			g2.drawString(text, box + 8, top + box - 3);
+			g2.dispose();
+		}
+	}
+
 	/** Тонкая полоса загрузки: своя, потому что системная выглядит чужеродно. */
 	static final class Bar extends JComponent {
 		private double done;
