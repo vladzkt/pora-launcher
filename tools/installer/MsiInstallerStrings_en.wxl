@@ -8,6 +8,10 @@
 
   Codepage 1251 и язык 1049 в main.wxs идут вместе: без них кириллица в базе установщика
   превращается в вопросительные знаки.
+
+  Свой цвет ставим только тем надписям, что лежат на нашей картинке: шапка страницы и текст
+  первой и последней страниц. Середина средних страниц - фон самой Windows, и её цвет зависит
+  от темы у игрока. Задашь там свой - у половины он сольётся с фоном.
 -->
 <WixLocalization Culture="en-us" xmlns="http://schemas.microsoft.com/wix/2006/localization" Codepage="1251">
 
@@ -67,33 +71,33 @@
   <!-- Готовность -->
   <String Id="VerifyReadyDlg_Title" Overridable="yes">Пора Копать — установка</String>
   <String Id="VerifyReadyDlgInstallTitle" Overridable="yes">{\PkTitle}Всё готово</String>
-  <String Id="VerifyReadyDlgInstallText" Overridable="yes">{\PkBody}Нажми «Поставить», чтобы начать. «Назад» — если хочешь что-то поменять.</String>
+  <String Id="VerifyReadyDlgInstallText" Overridable="yes">Нажми «Поставить», чтобы начать. «Назад» — если хочешь что-то поменять.</String>
   <String Id="VerifyReadyDlgInstall" Overridable="yes">&amp;Поставить</String>
   <String Id="VerifyReadyDlgRepairTitle" Overridable="yes">{\PkTitle}Починить установку</String>
-  <String Id="VerifyReadyDlgRepairText" Overridable="yes">{\PkBody}Нажми «Починить», чтобы восстановить лаунчер.</String>
+  <String Id="VerifyReadyDlgRepairText" Overridable="yes">Нажми «Починить», чтобы восстановить лаунчер.</String>
   <String Id="VerifyReadyDlgRepair" Overridable="yes">&amp;Починить</String>
   <String Id="VerifyReadyDlgRemoveTitle" Overridable="yes">{\PkTitle}Удаление</String>
-  <String Id="VerifyReadyDlgRemoveText" Overridable="yes">{\PkBody}Нажми «Удалить», чтобы убрать лаунчер с компьютера. Игра и моды останутся.</String>
+  <String Id="VerifyReadyDlgRemoveText" Overridable="yes">Нажми «Удалить», чтобы убрать лаунчер с компьютера. Игра и моды останутся.</String>
   <String Id="VerifyReadyDlgRemove" Overridable="yes">&amp;Удалить</String>
   <String Id="VerifyReadyDlgChangeTitle" Overridable="yes">{\PkTitle}Изменение установки</String>
-  <String Id="VerifyReadyDlgChangeText" Overridable="yes">{\PkBody}Нажми «Изменить», чтобы применить.</String>
+  <String Id="VerifyReadyDlgChangeText" Overridable="yes">Нажми «Изменить», чтобы применить.</String>
   <String Id="VerifyReadyDlgChange" Overridable="yes">&amp;Изменить</String>
   <String Id="VerifyReadyDlgUpdateTitle" Overridable="yes">{\PkTitle}Обновление</String>
-  <String Id="VerifyReadyDlgUpdateText" Overridable="yes">{\PkBody}Нажми «Обновить», чтобы поставить новую версию.</String>
+  <String Id="VerifyReadyDlgUpdateText" Overridable="yes">Нажми «Обновить», чтобы поставить новую версию.</String>
   <String Id="VerifyReadyDlgUpdate" Overridable="yes">&amp;Обновить</String>
 
   <!-- Ход установки -->
   <String Id="ProgressDlg_Title" Overridable="yes">Пора Копать — установка</String>
   <String Id="ProgressDlgTitleInstalling" Overridable="yes">{\PkTitle}Ставим</String>
-  <String Id="ProgressDlgTextInstalling" Overridable="yes">{\PkBody}Секунду, копируем файлы.</String>
+  <String Id="ProgressDlgTextInstalling" Overridable="yes">Секунду, копируем файлы.</String>
   <String Id="ProgressDlgTitleRemoving" Overridable="yes">{\PkTitle}Удаляем</String>
-  <String Id="ProgressDlgTextRemoving" Overridable="yes">{\PkBody}Секунду, убираем файлы.</String>
+  <String Id="ProgressDlgTextRemoving" Overridable="yes">Секунду, убираем файлы.</String>
   <String Id="ProgressDlgTitleRepairing" Overridable="yes">{\PkTitle}Чиним</String>
-  <String Id="ProgressDlgTextRepairing" Overridable="yes">{\PkBody}Секунду, восстанавливаем файлы.</String>
+  <String Id="ProgressDlgTextRepairing" Overridable="yes">Секунду, восстанавливаем файлы.</String>
   <String Id="ProgressDlgTitleUpdating" Overridable="yes">{\PkTitle}Обновляем</String>
-  <String Id="ProgressDlgTextUpdating" Overridable="yes">{\PkBody}Секунду, ставим новую версию.</String>
+  <String Id="ProgressDlgTextUpdating" Overridable="yes">Секунду, ставим новую версию.</String>
   <String Id="ProgressDlgTitleChanging" Overridable="yes">{\PkTitle}Меняем</String>
-  <String Id="ProgressDlgTextChanging" Overridable="yes">{\PkBody}Секунду, применяем изменения.</String>
+  <String Id="ProgressDlgTextChanging" Overridable="yes">Секунду, применяем изменения.</String>
   <String Id="ProgressDlgStatusLabel" Overridable="yes">Сейчас:</String>
 
   <!-- Конец -->
@@ -142,6 +146,8 @@
 
   <!-- Файлы заняты -->
   <String Id="FilesInUse_Title" Overridable="yes">Пора Копать — установка</String>
+  <String Id="FilesInUseDescription" Overridable="yes">{\PkBody}Закрой лаунчер и нажми «Повторить».</String>
+  <String Id="MsiRMFilesInUseDescription" Overridable="yes">{\PkBody}Закрой лаунчер, чтобы продолжить.</String>
   <String Id="FilesInUseTitle" Overridable="yes">{\PkTitle}Лаунчер запущен</String>
   <String Id="FilesInUseText" Overridable="yes">Закрой лаунчер и нажми «Повторить».</String>
   <String Id="FilesInUseExit" Overridable="yes">&amp;Выйти</String>
