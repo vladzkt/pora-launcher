@@ -256,18 +256,40 @@ public final class Installer {
 
 	// --- наши моды --------------------------------------------------------------------------
 
-	/** Папка модов приводится ровно к списку с сайта: лишние джарники удаляются. */
+	/** Джарник мода, который в режиме разработчика лаунчер не трогает. */
+	private static final String OURS = "galaxy-mod-";
+
+	/**
+	 * Папка модов приводится ровно к списку с сайта: лишние джарники удаляются.
+	 *
+	 * Кроме одного случая. Если в папке игры лежит файл {@code dev.flag}, лаунчер не трогает
+	 * джарник самого мода: не сверяет его с сайтом и не удаляет. Иначе проверить свежую сборку
+	 * невозможно в принципе - положил её в mods, нажал «Играть», и лаунчер тут же вернул на место
+	 * ту, что лежит в паке. А чтобы попасть в пак, сборка должна сперва уехать на сайт, то есть
+	 * стать общей для всех игроков; выходит, проверять не на чем.
+	 *
+	 * Флажок ставится руками и только себе - у игроков его нет, и для них ничего не меняется.
+	 */
 	private void mods(Site.Pack pack) throws IOException {
 		Path mods = root.resolve("mods");
 		Files.createDirectories(mods);
+		boolean dev = Files.exists(root.resolve("dev.flag"));
 		Set<String> wanted = new HashSet<>();
 		for (Site.PackFile f : pack.files()) {
 			Path file = root.resolve(f.path());
-			wanted.add(file.getFileName().toString());
+			String name = file.getFileName().toString();
+			wanted.add(name);
+			if (dev && name.startsWith(OURS)) {
+				continue;
+			}
 			need(file, f.size(), f.sha1(), f.url());
 		}
 		for (Path there : Files2.listFiles(mods)) {
-			if (!wanted.contains(there.getFileName().toString())) {
+			String name = there.getFileName().toString();
+			if (dev && name.startsWith(OURS)) {
+				continue;
+			}
+			if (!wanted.contains(name)) {
 				Files.deleteIfExists(there);
 			}
 		}
