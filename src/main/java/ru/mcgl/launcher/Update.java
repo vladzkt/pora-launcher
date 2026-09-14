@@ -57,10 +57,16 @@ public final class Update {
 			}
 		}
 		try {
-			Path best = newestNearby();
-			if (best == null) {
-				best = fetchIfNewer();
-			}
+			// Сайт спрашиваем ВСЕГДА, а не только когда рядом ничего нет.
+			//
+			// Раньше было иначе: нашёлся джарник поновее рядом - на сайт уже не ходим. И это
+			// обновление ломало: старший лаунчер видит рядом свежую версию, перезапускается в неё
+			// ребёнком, а ребёнок обновление не проверяет вовсе. Выходило, что после первого же
+			// обновления лаунчер навсегда застревал на нём и следующих не получал никогда.
+			Path nearby = newestNearby();
+			String have = nearby == null ? running() : versionOf(nearby.getFileName().toString());
+			Path fetched = fetchIfNewer(have == null ? running() : have);
+			Path best = fetched == null ? nearby : fetched;
 			if (best != null) {
 				restart(best, args);
 			}
@@ -126,7 +132,7 @@ public final class Update {
 		}
 	}
 
-	private static Path fetchIfNewer() throws IOException {
+	private static Path fetchIfNewer(String have) throws IOException {
 		HttpURLConnection link = (HttpURLConnection) URI.create(Site.BASE + "/api/launcher/version")
 				.toURL().openConnection();
 		link.setConnectTimeout(CONNECT_MS);
@@ -145,7 +151,7 @@ public final class Update {
 			return null;
 		}
 		String version = json.get("version").getAsString();
-		if (!newer(version, running())) {
+		if (!newer(version, have)) {
 			return null;
 		}
 
