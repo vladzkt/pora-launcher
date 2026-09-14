@@ -35,7 +35,7 @@ public final class Game {
 	}
 
 	public static List<String> command(Path root, Installer.Plan plan, Site.Account account,
-			String minecraft, String fabric, int memoryMb) {
+			String minecraft, String fabric, int memoryMb, Path mods) {
 		StringBuilder classpath = new StringBuilder();
 		for (Path entry : plan.classpath()) {
 			if (classpath.length() > 0) {
@@ -52,6 +52,18 @@ public final class Game {
 		// Разовый ключ для входа: мод на сервере проверит его через сайт и пустит игрока.
 		cmd.add("-Dporakopatb.token=" + account.token());
 		cmd.add("-Dporakopatb.site=" + Site.BASE);
+		// Моды берутся не из папки игры, а оттуда, куда их только что расшифровали.
+		//
+		// Fabric умеет грузить их из любого места, и папка `mods` ему не нужна вовсе. Ради этого
+		// всё и затевалось: в папке игры модов нет, на диске они лежат зашифрованными, а открытые
+		// живут во временной папке ровно столько, сколько идёт игра.
+		StringBuilder extra = new StringBuilder(mods.toAbsolutePath().toString());
+		Path own = root.resolve("mods");
+		if (java.nio.file.Files.isDirectory(own)) {
+			// Режим разработчика: своя сборка мода лежит в папке игры и должна доехать до игры.
+			extra.append(File.pathSeparator).append(own.toAbsolutePath());
+		}
+		cmd.add("-Dfabric.addMods=" + extra);
 		cmd.add("-cp");
 		cmd.add(classpath.toString());
 		cmd.add(plan.mainClass());
@@ -78,8 +90,9 @@ public final class Game {
 	}
 
 	public static Process start(Path root, Installer.Plan plan, Site.Account account,
-			String minecraft, String fabric, int memoryMb) throws IOException {
-		ProcessBuilder builder = new ProcessBuilder(command(root, plan, account, minecraft, fabric, memoryMb));
+			String minecraft, String fabric, int memoryMb, Path mods) throws IOException {
+		ProcessBuilder builder = new ProcessBuilder(
+				command(root, plan, account, minecraft, fabric, memoryMb, mods));
 		builder.directory(root.toFile());
 		builder.redirectErrorStream(true);
 		builder.redirectOutput(root.resolve("game.log").toFile());

@@ -1,6 +1,8 @@
 package ru.mcgl.launcher;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -51,6 +53,10 @@ public final class Installer {
 	}
 
 	public Plan install(Site.Pack pack, Progress say) throws IOException {
+		return install(pack, "", say);
+	}
+
+	public Plan install(Site.Pack pack, String packKey, Progress say) throws IOException {
 		say.say("Смотрю, что нового", 0.02);
 		JsonObject version = versionJson(pack.minecraft());
 
@@ -81,7 +87,7 @@ public final class Installer {
 		assets(index, assets, say);
 
 		say.say("Моды сервера", 0.92);
-		mods(pack);
+		mods(pack, packKey);
 
 		options();
 
@@ -302,10 +308,81 @@ public final class Installer {
 	 *
 	 * Флажок ставится руками и только себе - у игроков его нет, и для них ничего не меняется.
 	 */
-	private void mods(Site.Pack pack) throws IOException {
+	private void mods(Site.Pack pack, String packKey) throws IOException {
+		boolean dev = Files.exists(root.resolve("dev.flag"));
+		Path index = Vault.store().resolve("index");
+		java.util.Properties known = new java.util.Properties();
+		if (Files.isRegularFile(index)) {
+			try (InputStream in = Files.newInputStream(index)) {
+				known.load(in);
+			}
+		}
+
+		for (Site.PackFile f : pack.files()) {
+			String name = f.path().substring(f.path().lastIndexOf('/') + 1);
+			if (dev && name.startsWith(OURS)) {
+				continue;
+			}
+			// Сумма записана в описи: сверять её так дешевле, чем каждый раз расшифровывать
+			// контейнер целиком ради одной проверки.
+			if (f.sha1().equalsIgnoreCase(known.getProperty(f.path(), ""))
+					&& Files.isRegularFile(Vault.container(f.path()))) {
+				continue;
+			}
+			Path plain = Files.createTempFile("pk-dl-", ".tmp");
+			Site.download(f.url(), plain);
+			if (f.sha1() != null && !f.sha1().isEmpty() && !f.sha1().equalsIgnoreCase(Files2.sha1(plain))) {
+				Files.deleteIfExists(plain);
+				throw new IOException("Файл скачался испорченным: " + name);
+			}
+			Vault.put(plain, f.path(), packKey);
+			known.setProperty(f.path(), f.sha1());
+		}
+
+		// Лишние контейнеры от прошлых сборок убираем: иначе кладовая растёт вечно.
+		Set<String> wanted = new HashSet<>();
+		for (Site.PackFile f : pack.files()) {
+			wanted.add(Vault.container(f.path()).getFileName().toString());
+		}
+		for (Path there : Files2.listFiles(Vault.store())) {
+			String name = there.getFileName().toString();
+			if (name.endsWith(".dat") && !wanted.contains(name)) {
+				Files.deleteIfExists(there);
+			}
+		}
+		for (Object key : new java.util.ArrayList<>(known.keySet())) {
+			boolean still = pack.files().stream().anyMatch(f -> f.path().equals(key));
+			if (!still) {
+				known.remove(key);
+			}
+		}
+
+		Files.createDirectories(Vault.store());
+		try (OutputStream out = Files.newOutputStream(index)) {
+			known.store(out, "опись сборки: путь = сумма");
+		}
+
+		// В папке игры модов быть не должно вовсе - в этом и смысл. Старые джарники от прежних
+		// версий лаунчера сносим, папку тоже.
+		Path mods = root.resolve("mods");
+		if (Files.isDirectory(mods)) {
+			for (Path there : Files2.listFiles(mods)) {
+				String name = there.getFileName().toString();
+				if (dev && name.startsWith(OURS)) {
+					continue;
+				}
+				Files.deleteIfExists(there);
+			}
+			if (Files2.listFiles(mods).isEmpty()) {
+				Files.deleteIfExists(mods);
+			}
+		}
+	}
+
+	/** Запасной путь: моды открытыми в папке игры, как было до кладовой. */
+	private void plainMods(Site.Pack pack, boolean dev) throws IOException {
 		Path mods = root.resolve("mods");
 		Files.createDirectories(mods);
-		boolean dev = Files.exists(root.resolve("dev.flag"));
 		Set<String> wanted = new HashSet<>();
 		for (Site.PackFile f : pack.files()) {
 			Path file = root.resolve(f.path());

@@ -541,20 +541,30 @@ public final class Launcher {
 					spinner.stop();
 					bar.set(0);
 				});
-				Installer.Plan plan = new Installer(root).install(pack, (what, done) ->
+				Installer.Plan plan = new Installer(root).install(pack, account.packKey(), (what, done) ->
 						SwingUtilities.invokeLater(() -> {
 							status.setText(what);
 							bar.set(done);
 						}));
 
 				say("Запускаю игру");
-				Process game = Game.start(root, plan, account, pack.minecraft(), pack.fabric(), memory());
+				// Моды расшифровываются сюда и живут ровно столько, сколько идёт игра.
+				Path unpacked = Vault.unpack(pack.files(), account.packKey());
+				Process game = Game.start(root, plan, account, pack.minecraft(), pack.fabric(),
+						memory(), unpacked);
 				SwingUtilities.invokeLater(() -> frame.setVisible(false));
 				// Игра встаёт на ноги секунд десять. Если она умерла за это время - это не запуск,
 				// а падение, и игроку надо показать окно обратно, иначе он остаётся ни с чем.
 				if (!game.waitFor(20, java.util.concurrent.TimeUnit.SECONDS)) {
+					// Игра поднялась. Лаунчер не уходит совсем, а тихо ждёт её конца, чтобы стереть
+					// расшифрованные моды. Уйди он сразу - открытые джарники остались бы лежать во
+					// временной папке до следующего запуска, а ради того, чтобы их там не было, всё
+					// и затевалось. Окно к этому времени уже скрыто, так что для игрока он исчез.
+					game.waitFor();
+					Vault.erase(unpacked);
 					System.exit(0);
 				}
+				Vault.erase(unpacked);
 				int code = game.exitValue();
 				SwingUtilities.invokeLater(() -> {
 					working = false;

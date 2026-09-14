@@ -34,7 +34,13 @@ public final class Site {
 	private static final String AGENT = "PoraKopatb-Launcher/1.0";
 
 	/** Кто вошёл: ник, разовый ключ для игры, адрес скина и ключ «запомнить», если просили. */
-	public record Account(String nick, String token, String skin, String device) {
+	/**
+	 * Учётная запись игрока и всё, что сайт выдал на этот вход.
+	 *
+	 * {@code packKey} - ключ от кладовой модов. Сборка лежит на диске зашифрованной, и без
+	 * ключа её не прочитать; ключ выдаётся только вошедшему и нигде не сохраняется.
+	 */
+	public record Account(String nick, String token, String skin, String device, String packKey) {
 	}
 
 	/** Один файл сборки: куда положить, сколько весит и какая у него сумма. */
@@ -109,7 +115,8 @@ public final class Site {
 		}
 		return new Account(json.get("nick").getAsString(), json.get("token").getAsString(),
 				json.has("skin") ? json.get("skin").getAsString() : "",
-				json.has("device") ? json.get("device").getAsString() : "");
+				json.has("device") ? json.get("device").getAsString() : "",
+				json.has("packKey") ? json.get("packKey").getAsString() : "");
 	}
 
 	/** Ошибку сайта показываем по-человечески: код для нас, строка для игрока. */
