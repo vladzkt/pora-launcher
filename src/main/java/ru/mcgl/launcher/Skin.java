@@ -405,7 +405,10 @@ final class Skin {
 			this.text = text;
 			this.size = size;
 			this.bold = bold;
-			setPreferredSize(new Dimension(0, Math.round(size) + 8));
+			// Ширину считаем по самому тексту: в строке из нескольких ссылок нулевая ширина
+			// схлопывает их в многоточие.
+			int wide = getFontMetrics(font(bold ? Font.BOLD : Font.PLAIN, size)).stringWidth(text) + 2;
+			setPreferredSize(new Dimension(wide, Math.round(size) + 8));
 			setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
 			addMouseListener(new MouseAdapter() {
 				@Override
@@ -450,6 +453,70 @@ final class Skin {
 				int w = g2.getFontMetrics().stringWidth(show);
 				g2.fillRect(0, base + 4, w, 1);
 			}
+			g2.dispose();
+		}
+	}
+
+	/** Кнопка-переключатель из ряда: выбран ровно один, как радиокнопки, только не уродливые. */
+	static final class Pill extends JComponent {
+		private final String text;
+		private boolean on;
+		private boolean hover;
+		private Runnable pick;
+
+		Pill(String text, boolean on, Runnable pick) {
+			this.text = text;
+			this.on = on;
+			this.pick = pick;
+			setPreferredSize(new Dimension(56, 28));
+			setMaximumSize(new Dimension(76, 28));
+			setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+			addMouseListener(new MouseAdapter() {
+				@Override
+				public void mouseEntered(MouseEvent e) {
+					hover = true;
+					repaint();
+				}
+
+				@Override
+				public void mouseExited(MouseEvent e) {
+					hover = false;
+					repaint();
+				}
+
+				@Override
+				public void mouseReleased(MouseEvent e) {
+					if (contains(e.getPoint())) {
+						Pill.this.pick.run();
+					}
+				}
+			});
+		}
+
+		void onPick(Runnable what) {
+			this.pick = what;
+		}
+
+		void setOn(boolean value) {
+			on = value;
+			repaint();
+		}
+
+		@Override
+		protected void paintComponent(Graphics g) {
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+			int w = getWidth();
+			int h = getHeight();
+			g2.setColor(on ? GOLD : FIELD);
+			g2.fillRoundRect(0, 0, w, h, 9, 9);
+			g2.setColor(on ? GOLD : (hover ? MUTED : LINE));
+			g2.drawRoundRect(0, 0, w - 1, h - 1, 9, 9);
+			g2.setFont(font(on ? Font.BOLD : Font.PLAIN, 12f));
+			g2.setColor(on ? INK : TEXT);
+			int tw = g2.getFontMetrics().stringWidth(text);
+			g2.drawString(text, (w - tw) / 2, h / 2 + g2.getFontMetrics().getAscent() / 2 - 2);
 			g2.dispose();
 		}
 	}

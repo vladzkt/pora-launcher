@@ -25,6 +25,19 @@ public final class Files2 {
 		return Path.of(System.getProperty("user.home"), ".porakopatb");
 	}
 
+	/** Открыть папку или файл тем, чем система открывает такое обычно. */
+	public static void reveal(Path what) {
+		try {
+			if (!Files.exists(what)) {
+				Files.createDirectories(what.getParent() == null ? what : what.getParent());
+			}
+			java.awt.Desktop.getDesktop().open(Files.isDirectory(what) ? what.toFile()
+					: (Files.exists(what) ? what.toFile() : what.getParent().toFile()));
+		} catch (Exception quiet) {
+			// Нечем открыть - не беда: путь игрок и так видит в окне.
+		}
+	}
+
 	public static String sha1(Path file) throws IOException {
 		try {
 			MessageDigest digest = MessageDigest.getInstance("SHA-1");

@@ -47,8 +47,9 @@ public final class Launcher {
 	private static final int HEADER = 167;
 	private static final int PAD = 30;
 
-	private final Path root = Files2.home();
 	private final Properties settings = new Properties();
+	/** Куда ставится игра. По умолчанию рядом с настройками, но игрок может увести на другой диск. */
+	private Path root = Files2.home();
 
 	private JFrame frame;
 	private JTextField nick;
@@ -60,6 +61,8 @@ public final class Launcher {
 	private JLabel onlineLine;
 	private Skin.Bar bar;
 	private JLabel status;
+	private JPanel crashBox;
+	private Skin.Link crashLink;
 	private Timer spinner;
 	private boolean working;
 
@@ -71,7 +74,9 @@ public final class Launcher {
 			return;
 		}
 		if (args.length > 0 && "--shot".equals(args[0])) {
-			shot(args.length > 1 ? args[1] : "launcher.png");
+			// Третьим доводом «setup» снимается окно настроек, иначе главное.
+			shot(args.length > 1 ? args[1] : "launcher.png",
+					args.length > 2 && "setup".equals(args[2]));
 			return;
 		}
 		SwingUtilities.invokeLater(() -> new Launcher().show());
@@ -97,13 +102,18 @@ public final class Launcher {
 	}
 
 	/** Рисуем окно в файл, чтобы посмотреть на него, никому его не показывая. */
-	private static void shot(String file) throws Exception {
+	private static void shot(String file, boolean setup) throws Exception {
 		SwingUtilities.invokeAndWait(() -> new Launcher().show());
-		Thread.sleep(2500);
+		Thread.sleep(setup ? 300 : 2500);
+		if (setup) {
+			SwingUtilities.invokeAndWait(() -> SHOWN.openSetup());
+			Thread.sleep(400);
+		}
 		SwingUtilities.invokeAndWait(() -> {
 			Launcher one = SHOWN;
-			one.frame.setVisible(false);
-			Component pane = one.frame.getContentPane();
+			JFrame shown = setup ? SETUP : one.frame;
+			shown.setVisible(false);
+			Component pane = shown.getContentPane();
 			BufferedImage image = new BufferedImage(pane.getWidth(), pane.getHeight(),
 					BufferedImage.TYPE_INT_RGB);
 			Graphics g = image.getGraphics();
@@ -120,10 +130,21 @@ public final class Launcher {
 
 	/** Последнее открытое окно: нужно только съёмке. */
 	private static Launcher SHOWN;
+	private static JFrame SETUP;
+
+	/** Открыть настройки: после сохранения папка игры может смениться. */
+	private void openSetup() {
+		Setup one = new Setup(frame, settings, () -> {
+			root = Path.of(settings.getProperty("dir", Files2.home().toString()));
+			save();
+		});
+		SETUP = one.show();
+	}
 
 	private void show() {
 		SHOWN = this;
 		load();
+		root = Path.of(settings.getProperty("dir", Files2.home().toString()));
 		frame = new JFrame("Пора Копать");
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		// Без системной рамки: своя кнопка закрытия лежит прямо на картинке.
@@ -176,6 +197,12 @@ public final class Launcher {
 
 		status = Skin.label(" ", Skin.MUTED, Font.PLAIN, 12f);
 		body.add(row(status, 18));
+		crashBox = new JPanel();
+		crashBox.setLayout(new BoxLayout(crashBox, BoxLayout.Y_AXIS));
+		crashBox.setBackground(Skin.BG);
+		crashBox.setMaximumSize(new Dimension(Integer.MAX_VALUE, 22));
+		crashBox.setVisible(false);
+		body.add(crashBox);
 		body.add(Box.createVerticalGlue());
 
 		body.add(row(Skin.label("porakopatb.com · " + Update.running(),
@@ -267,7 +294,9 @@ public final class Launcher {
 		left(panel, row(onlineLine, 20, Skin.PANEL));
 
 		left(panel, Box.createVerticalGlue());
+		left(panel, link("Настройки", this::openSetup));
 		left(panel, link("Регистрация", () -> open(Site.BASE + "/register")));
+		left(panel, link("Забыл пароль", () -> open(Site.BASE + "/forgot")));
 		left(panel, link("Вики сервера", () -> open(Site.BASE + "/wiki")));
 		left(panel, link("Карта мира", () -> open(Site.BASE + "/map")));
 		left(panel, link("Форум", () -> open(Site.BASE + "/forum")));
@@ -398,6 +427,24 @@ public final class Launcher {
 		}
 	}
 
+	/**
+	 * Игра закрылась сразу после запуска. Причина почти всегда в логе, поэтому не пересказываем
+	 * её своими словами, а даём открыть лог одним нажатием.
+	 */
+	private void crashed(int code) {
+		status.setText("Игра закрылась сразу (код " + code + ")");
+		if (crashLink == null) {
+			crashLink = new Skin.Link("Показать лог игры", 12f, false,
+					() -> Files2.reveal(root.resolve("game.log")));
+			crashLink.setAlignmentX(0f);
+			crashLink.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
+			crashBox.add(crashLink);
+		}
+		crashBox.setVisible(true);
+		crashBox.revalidate();
+		crashBox.repaint();
+	}
+
 	/** Ключ «запомнить пароль» для этой машины; пустая строка, если его нет. */
 	private String saved() {
 		return settings.getProperty("device", "");
@@ -443,11 +490,22 @@ public final class Launcher {
 						}));
 
 				say("Запускаю игру");
-				Game.start(root, plan, account, pack.minecraft(), pack.fabric(), memory());
+				Process game = Game.start(root, plan, account, pack.minecraft(), pack.fabric(), memory());
 				SwingUtilities.invokeLater(() -> frame.setVisible(false));
-				// Даём игре встать на ноги и уходим: держать окно лаунчера незачем.
-				Thread.sleep(8000);
-				System.exit(0);
+				// Игра встаёт на ноги секунд десять. Если она умерла за это время - это не запуск,
+				// а падение, и игроку надо показать окно обратно, иначе он остаётся ни с чем.
+				if (!game.waitFor(20, java.util.concurrent.TimeUnit.SECONDS)) {
+					System.exit(0);
+				}
+				int code = game.exitValue();
+				SwingUtilities.invokeLater(() -> {
+					working = false;
+					bar.setVisible(false);
+					play.setOn(true);
+					frame.setVisible(true);
+					crashed(code);
+				});
+				return;
 			} catch (Exception broken) {
 				String message = broken.getMessage() == null ? broken.toString() : broken.getMessage();
 				// Ключ протух или его отозвали сменой пароля - выбрасываем и просим пароль.
@@ -499,7 +557,7 @@ public final class Launcher {
 	}
 
 	private void load() {
-		Path file = root.resolve("launcher.properties");
+		Path file = Files2.home().resolve("launcher.properties");
 		if (Files.isRegularFile(file)) {
 			try (var in = Files.newInputStream(file)) {
 				settings.load(in);
@@ -511,8 +569,8 @@ public final class Launcher {
 
 	private void save() {
 		try {
-			Files.createDirectories(root);
-			try (var out = Files.newOutputStream(root.resolve("launcher.properties"))) {
+			Files.createDirectories(Files2.home());
+			try (var out = Files.newOutputStream(Files2.home().resolve("launcher.properties"))) {
 				settings.store(out, "Пора Копать");
 			}
 		} catch (IOException ignored) {
