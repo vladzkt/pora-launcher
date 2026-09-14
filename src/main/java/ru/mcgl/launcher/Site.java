@@ -50,7 +50,7 @@ public final class Site {
 
 	/** Что показать в окне: новости, кто в игре и куда ведут кнопки. */
 	public record Home(java.util.List<News> news, boolean online, java.util.List<String> players,
-			String register, String wiki, String map, String forum) {
+			String game, String register, String wiki, String map, String forum) {
 	}
 
 	/** Что игрок должен иметь у себя, чтобы зайти на сервер. */
@@ -158,6 +158,7 @@ public final class Site {
 			}
 			JsonObject links = json.getAsJsonObject("links");
 			return new Home(news, json.get("online").getAsBoolean(), players,
+					json.has("game") ? json.get("game").getAsString() : "porakopatb.com",
 					links.get("register").getAsString(), links.get("wiki").getAsString(),
 					links.get("map").getAsString(), links.get("forum").getAsString());
 		} catch (Exception quiet) {

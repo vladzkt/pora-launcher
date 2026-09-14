@@ -59,6 +59,9 @@ public final class Launcher {
 	private JPanel passBlock;
 	private JPanel newsBox;
 	private JLabel onlineLine;
+	private JLabel addressLine;
+	private JLabel gameLine;
+	private JLabel packLine;
 	private Skin.Bar bar;
 	private JLabel status;
 	private JPanel crashBox;
@@ -293,6 +296,24 @@ public final class Launcher {
 		onlineLine = Skin.label(" ", Skin.MUTED, Font.PLAIN, 12f);
 		left(panel, row(onlineLine, 20, Skin.PANEL));
 
+		left(panel, Box.createVerticalStrut(18));
+
+		// Адрес спрашивают чаще всего, поэтому он в окне, а не только на сайте.
+		left(panel, row(Skin.caption("Адрес сервера"), 16, Skin.PANEL));
+		left(panel, Box.createVerticalStrut(4));
+		addressLine = Skin.label("…", Skin.GOLD, Font.BOLD, 14f);
+		left(panel, row(addressLine, 20, Skin.PANEL));
+		left(panel, Box.createVerticalStrut(2));
+		left(panel, link("Скопировать адрес", this::copyAddress));
+
+		left(panel, Box.createVerticalStrut(18));
+		left(panel, row(Skin.caption("Игра"), 16, Skin.PANEL));
+		left(panel, Box.createVerticalStrut(4));
+		gameLine = Skin.label("…", Skin.MUTED, Font.PLAIN, 12f);
+		left(panel, row(gameLine, 18, Skin.PANEL));
+		packLine = Skin.label(" ", Skin.MUTED, Font.PLAIN, 12f);
+		left(panel, row(packLine, 18, Skin.PANEL));
+
 		left(panel, Box.createVerticalGlue());
 		left(panel, link("Настройки", this::openSetup));
 		left(panel, link("Регистрация", () -> open(Site.BASE + "/register")));
@@ -327,14 +348,63 @@ public final class Launcher {
         }
 	}
 
+	/** Адрес в буфер обмена: его часто нужно вбить в другом месте или скинуть другу. */
+	private void copyAddress() {
+		String what = addressLine.getText();
+		if (what.isBlank() || "…".equals(what)) {
+			return;
+		}
+		java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
+				.setContents(new java.awt.datatransfer.StringSelection(what), null);
+		say("Адрес скопирован");
+	}
+
+	/**
+	 * Скачана ли игра и сколько она занимает. По этой строке видно, ждать ли первого запуска
+	 * долго: гигабайт по слабому каналу - это минуты, и лучше знать заранее.
+	 */
+	private void tellAboutGame() {
+		boolean ready = Files.isDirectory(root.resolve("versions"));
+		long bytes = 0;
+		if (ready) {
+			try (var walk = Files.walk(root)) {
+				bytes = walk.filter(Files::isRegularFile).mapToLong(file -> {
+					try {
+						return Files.size(file);
+					} catch (IOException skip) {
+						return 0;
+					}
+				}).sum();
+			} catch (Exception quiet) {
+				bytes = 0;
+			}
+		}
+		double gb = Math.round(bytes / 1024.0 / 1024 / 102.4) / 10.0;
+		String text = bytes > 0 ? "скачана, " + gb + " ГБ" : "ещё не скачана";
+		String more = bytes > 0 ? " " : "первый запуск займёт несколько минут";
+		SwingUtilities.invokeLater(() -> {
+			gameLine.setText(text);
+			if (!more.isBlank()) {
+				packLine.setText(more);
+			}
+		});
+	}
+
 	private void fillSide() {
+		tellAboutGame();
 		Site.Home home = Site.home();
+		String pack = packWhen();
 		SwingUtilities.invokeLater(() -> {
 			newsBox.removeAll();
+			if (!pack.isEmpty()) {
+				packLine.setText("сборка от " + pack);
+			}
 			if (home == null) {
 				left(newsBox, row(Skin.label("Сайт не ответил", Skin.MUTED, Font.PLAIN, 12f), 20, Skin.PANEL));
 				onlineLine.setText("неизвестно");
+				addressLine.setText("porakopatb.com");
 			} else {
+				addressLine.setText(home.game());
 				if (home.news().isEmpty()) {
 					left(newsBox, row(Skin.label("Пока тихо", Skin.MUTED, Font.PLAIN, 12f), 20, Skin.PANEL));
 				}
@@ -349,6 +419,18 @@ public final class Launcher {
 			newsBox.revalidate();
 			newsBox.repaint();
 		});
+	}
+
+	/** Когда собран пак: версия приходит временем последней правки вида 20260914090330. */
+	private static String packWhen() {
+		try {
+			String when = Site.pack().version();
+			return when.length() >= 8
+					? when.substring(6, 8) + "." + when.substring(4, 6) + "." + when.substring(0, 4)
+					: "";
+		} catch (Exception quiet) {
+			return "";
+		}
 	}
 
 	/** Строка про онлайн: сколько людей и кто именно, если их немного. */
