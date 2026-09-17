@@ -50,8 +50,13 @@ public final class Site {
 		}
 	}
 
-	/** Одна новость с сайта. */
-	public record News(String title, String url) {
+	/** Одна новость с сайта: заголовок, ссылка, когда вышла и первая строка текста. */
+	public record News(String title, String url, long at, String snippet) {
+	}
+
+	/** Скин игрока на сайте - из него лаунчер вырезает лицо для строки «Сейчас в игре». */
+	public static String skinUrl(String nick) {
+		return BASE + "/skin/" + nick + ".png";
 	}
 
 	/** Что показать в окне: новости, кто в игре и куда ведут кнопки. */
@@ -157,7 +162,9 @@ public final class Site {
 			List<News> news = new ArrayList<>();
 			for (JsonElement e : json.getAsJsonArray("news")) {
 				JsonObject one = e.getAsJsonObject();
-				news.add(new News(one.get("title").getAsString(), one.get("url").getAsString()));
+				news.add(new News(one.get("title").getAsString(), one.get("url").getAsString(),
+						one.has("at") && !one.get("at").isJsonNull() ? one.get("at").getAsLong() : 0L,
+						one.has("snippet") && !one.get("snippet").isJsonNull() ? one.get("snippet").getAsString() : ""));
 			}
 			List<String> players = new ArrayList<>();
 			for (JsonElement e : json.getAsJsonArray("players")) {

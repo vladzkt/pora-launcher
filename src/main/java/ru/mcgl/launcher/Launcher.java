@@ -59,6 +59,8 @@ public final class Launcher {
 	private JPanel passBlock;
 	private JPanel newsBox;
 	private JLabel onlineLine;
+	/** Строка «Сейчас в игре»: лица и ники, когда игроков немного. */
+	private JPanel onlineBox;
 	private JLabel gameLine;
 	private JLabel packLine;
 	private Skin.Bar bar;
@@ -285,7 +287,8 @@ public final class Launcher {
 		newsBox.setLayout(new BoxLayout(newsBox, BoxLayout.Y_AXIS));
 		newsBox.setBackground(Skin.PANEL);
 		newsBox.setAlignmentX(0f);
-		newsBox.setMaximumSize(new Dimension(Integer.MAX_VALUE, 180));
+		// Две строки на новость (заголовок и «дата · выжимка»), четыре новости.
+		newsBox.setMaximumSize(new Dimension(Integer.MAX_VALUE, 4 * 38 + 4));
 		left(newsBox, row(Skin.label("Загружаю…", Skin.MUTED, Font.PLAIN, 12f), 20, Skin.PANEL));
 		left(panel, newsBox);
 		left(panel, Box.createVerticalStrut(18));
@@ -294,6 +297,12 @@ public final class Launcher {
 		left(panel, Box.createVerticalStrut(4));
 		onlineLine = Skin.label(" ", Skin.MUTED, Font.PLAIN, 12f);
 		left(panel, row(onlineLine, 20, Skin.PANEL));
+		onlineBox = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 8, 0));
+		onlineBox.setBackground(Skin.PANEL);
+		onlineBox.setAlignmentX(0f);
+		onlineBox.setMaximumSize(new Dimension(Integer.MAX_VALUE, 44));
+		onlineBox.setVisible(false);
+		left(panel, onlineBox);
 
 		left(panel, Box.createVerticalStrut(18));
 		left(panel, row(Skin.caption("Игра"), 16, Skin.PANEL));
@@ -384,13 +393,25 @@ public final class Launcher {
 				if (home.news().isEmpty()) {
 					left(newsBox, row(Skin.label("Пока тихо", Skin.MUTED, Font.PLAIN, 12f), 20, Skin.PANEL));
 				}
+				int shown = 0;
 				for (Site.News one : home.news()) {
+					if (shown++ >= 4) {
+						break;
+					}
 					Skin.Link item = new Skin.Link(one.title(), 13f, false, () -> open(one.url()));
 					item.setAlignmentX(0f);
-					item.setMaximumSize(new Dimension(SIDE - 44, 24));
+					item.setMaximumSize(new Dimension(SIDE - 44, 22));
 					left(newsBox, item);
+					// Под заголовком - когда вышла и первая строка: по ней видно, стоит ли открывать.
+					String under = newsUnder(one);
+					if (!under.isEmpty()) {
+						JLabel line = Skin.label(under, Skin.MUTED, Font.PLAIN, 11f);
+						line.setMaximumSize(new Dimension(SIDE - 44, 16));
+						left(newsBox, line);
+					}
 				}
 				onlineLine.setText(text(home));
+				fillOnline(home);
 			}
 			newsBox.revalidate();
 			newsBox.repaint();
@@ -409,6 +430,45 @@ public final class Launcher {
 		}
 	}
 
+	/** «17.09 · Кремний варится только как в оригинале…» - дата и начало текста, обрезанные по ширине. */
+	private static String newsUnder(Site.News one) {
+		StringBuilder under = new StringBuilder();
+		if (one.at() > 0) {
+			java.time.LocalDate day = java.time.Instant.ofEpochMilli(one.at()).atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+			under.append(String.format("%02d.%02d", day.getDayOfMonth(), day.getMonthValue()));
+		}
+		String snippet = one.snippet() == null ? "" : one.snippet().replaceAll("\\s+", " ").trim();
+		if (!snippet.isEmpty()) {
+			if (under.length() > 0) {
+				under.append(" · ");
+			}
+			under.append(snippet.length() > 48 ? snippet.substring(0, 47) + "…" : snippet);
+		}
+		return under.toString();
+	}
+
+	/** Лица и ники тех, кто в игре: до восьми, дальше только число в строке выше. */
+	private void fillOnline(Site.Home home) {
+		onlineBox.removeAll();
+		boolean faces = home.online() && !home.players().isEmpty() && home.players().size() <= 8;
+		onlineBox.setVisible(faces);
+		if (faces) {
+			for (String nick : home.players()) {
+				JLabel who = new JLabel(nick);
+				who.setForeground(Skin.TEXT);
+				who.setFont(Skin.font(Font.PLAIN, 12f));
+				who.setIconTextGap(5);
+				who.setIcon(Faces.of(nick, icon -> {
+					who.setIcon(icon);
+					who.repaint();
+				}));
+				onlineBox.add(who);
+			}
+		}
+		onlineBox.revalidate();
+		onlineBox.repaint();
+	}
+
 	/** Строка про онлайн: сколько людей и кто именно, если их немного. */
 	private static String text(Site.Home home) {
 		if (!home.online()) {
@@ -417,8 +477,9 @@ public final class Launcher {
 		if (home.players().isEmpty()) {
 			return "никого, будь первым";
 		}
+		// Ники теперь стоят лицами в строке ниже; здесь - только число, когда их мало.
 		String who = String.join(", ", home.players());
-		return home.players().size() + " " + (who.length() > 60 ? "" : "· " + who);
+		return home.players().size() > 8 ? home.players().size() + " · " + who : home.players().size() + " в игре";
 	}
 
 	/** Показать поле пароля и поставить в него курсор: сохранённый вход больше не годится. */
