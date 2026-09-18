@@ -50,7 +50,9 @@ public final class Game {
 		}
 
 		List<String> cmd = new ArrayList<>();
-		cmd.add(java().toString());
+		// Java берём ту, что скачал установщик под эту систему; своей пользуемся, только если
+		// она и так подходит (Windows с вложенной средой, Мак с поставленной руками).
+		cmd.add(plan.java() != null ? plan.java().toString() : java().toString());
 		// Маку это обязательно: без -XstartOnFirstThread LWJGL не создаёт окно вовсе, и игра
 		// падает на запуске. На остальных системах флага быть не должно.
 		if (Os.mac()) {

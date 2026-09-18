@@ -44,7 +44,9 @@ public final class Installer {
 	}
 
 	/** Всё, что нужно, чтобы собрать команду запуска. */
-	public record Plan(List<Path> classpath, Path natives, String mainClass, Path assets, String assetIndex) {
+	/** {@code java} - та Java, которой запускать игру: скачанная Mojang или null, если своя сгодится. */
+	public record Plan(List<Path> classpath, Path natives, String mainClass, Path assets, String assetIndex,
+			Path java) {
 	}
 
 	private final Path root;
@@ -106,13 +108,16 @@ public final class Installer {
 		Path assets = root.resolve("assets");
 		assets(index, assets, say);
 
+		say.say("Java для игры", 0.88);
+		Path java = runtime(version, say);
+
 		say.say("Моды сервера", 0.92);
 		mods(pack, packKey);
 
 		options();
 
 		say.say("Готово", 1.0);
-		return new Plan(classpath, natives, mainClass, assets, assetIndexId);
+		return new Plan(classpath, natives, mainClass, assets, assetIndexId, java);
 	}
 
 	// --- игра -------------------------------------------------------------------------------
@@ -455,6 +460,128 @@ public final class Installer {
 			if (!wanted.contains(name)) {
 				Files.deleteIfExists(there);
 			}
+		}
+	}
+
+	/** Где Mojang держит список своих сред Java. */
+	private static final String RUNTIMES =
+			"https://launchermeta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json";
+
+	/**
+	 * Java для игры: ровно та, что Mojang считает правильной для этой версии.
+	 *
+	 * Зачем своя, когда лаунчер и так работает на какой-то. На Windows Java едет внутри
+	 * установщика, и вопроса нет. На Маке и Линуксе игрок ставит её сам - и ставит какую попало:
+	 * игре 1.21.1 нужна двадцать первая, а в системе часто семнадцатая или вовсе восьмая. Пусть
+	 * лаунчер запускается на любой свежей, а игру запускает той, что скачал сам.
+	 *
+	 * Список у Mojang разложен по площадкам (mac-os-arm64, linux, windows-x64) и по составам
+	 * (java-runtime-delta - это 21). В манифесте состава - дерево файлов: обычные качаем по сумме,
+	 * ссылки повторяем ссылками, а где сказано executable - ставим право на запуск, иначе на Маке
+	 * и Линуксе такой java не запустится вовсе.
+	 *
+	 * Своя среда не скачивается, если лаунчер и так работает на подходящей: на Windows это
+	 * вложенная Java, и второй такой же на диске никому не нужно.
+	 */
+	private Path runtime(JsonObject version, Progress say) throws IOException {
+		if (!version.has("javaVersion")) {
+			return null;
+		}
+		JsonObject wanted = version.getAsJsonObject("javaVersion");
+		String component = wanted.get("component").getAsString();
+		int major = wanted.get("majorVersion").getAsInt();
+		// Своя Java подходит - ничего не качаем: на Windows она внутри установщика, а на Маке и
+		// Линуксе игрок мог поставить ту же двадцать первую сам.
+		if (Runtime.version().feature() >= major) {
+			return null;
+		}
+		String platform = platform();
+		JsonObject all = JsonParser.parseString(Site.text(RUNTIMES)).getAsJsonObject();
+		if (!all.has(platform)) {
+			return null;
+		}
+		JsonObject parts = all.getAsJsonObject(platform);
+		if (!parts.has(component) || parts.getAsJsonArray(component).isEmpty()) {
+			return null;
+		}
+		JsonObject manifest = parts.getAsJsonArray(component).get(0).getAsJsonObject()
+				.getAsJsonObject("manifest");
+		Path into = root.resolve("runtime").resolve(component).resolve(platform);
+		JsonObject files = JsonParser.parseString(Site.text(manifest.get("url").getAsString()))
+				.getAsJsonObject().getAsJsonObject("files");
+		int done = 0;
+		int total = files.size();
+		for (String path : files.keySet()) {
+			JsonObject entry = files.getAsJsonObject(path);
+			Path target = into.resolve(path);
+			String type = entry.get("type").getAsString();
+			if ("directory".equals(type)) {
+				Files.createDirectories(target);
+			} else if ("link".equals(type)) {
+				link(target, entry.get("target").getAsString());
+			} else if (entry.has("downloads")) {
+				JsonObject raw = entry.getAsJsonObject("downloads").getAsJsonObject("raw");
+				Files.createDirectories(target.getParent());
+				need(target, raw.get("size").getAsLong(), raw.get("sha1").getAsString(),
+						raw.get("url").getAsString());
+				if (entry.has("executable") && entry.get("executable").getAsBoolean()) {
+					executable(target);
+				}
+			}
+			if (++done % 50 == 0) {
+				say.say("Java для игры", 0.88 + 0.03 * done / Math.max(1, total));
+			}
+		}
+		Path binary = into.resolve("bin").resolve(Os.windows() ? "javaw.exe" : "java");
+		Path bundled = into.resolve("jre.bundle/Contents/Home/bin/java");
+		if (!Files.isRegularFile(binary) && Files.isRegularFile(bundled)) {
+			binary = bundled;
+		}
+		if (!Files.isRegularFile(binary)) {
+			return null;
+		}
+		executable(binary);
+		return binary;
+	}
+
+	/** Имя площадки в списке Mojang. */
+	private static String platform() {
+		if (Os.windows()) {
+			return "arm64".equals(ARCH) ? "windows-arm64" : "x86".equals(ARCH) ? "windows-x86" : "windows-x64";
+		}
+		if (Os.mac()) {
+			return "arm64".equals(ARCH) ? "mac-os-arm64" : "mac-os";
+		}
+		return "x86".equals(ARCH) ? "linux-i386" : "linux";
+	}
+
+	/** Ссылка внутри среды: где нельзя - копия, лишь бы файл оказался на месте. */
+	private static void link(Path target, String to) throws IOException {
+		Files.createDirectories(target.getParent());
+		if (Files.exists(target, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+			return;
+		}
+		try {
+			Files.createSymbolicLink(target, Path.of(to));
+		} catch (IOException | UnsupportedOperationException noLinks) {
+			Path source = target.getParent().resolve(to).normalize();
+			if (Files.isRegularFile(source)) {
+				Files.copy(source, target);
+			}
+		}
+	}
+
+	/** Право на запуск: без него скачанная java на Маке и Линуксе не стартует. */
+	private static void executable(Path file) {
+		try {
+			java.util.Set<java.nio.file.attribute.PosixFilePermission> rights =
+					new HashSet<>(Files.getPosixFilePermissions(file));
+			rights.add(java.nio.file.attribute.PosixFilePermission.OWNER_EXECUTE);
+			rights.add(java.nio.file.attribute.PosixFilePermission.GROUP_EXECUTE);
+			rights.add(java.nio.file.attribute.PosixFilePermission.OTHERS_EXECUTE);
+			Files.setPosixFilePermissions(file, rights);
+		} catch (IOException | UnsupportedOperationException windows) {
+			// На Windows прав на запуск нет вовсе - и не надо.
 		}
 	}
 

@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'ru.mcgl'
-version = '1.0.15'
+version = '1.0.16'
 
 repositories {
     mavenCentral()
@@ -18,8 +18,18 @@ dependencies {
 }
 
 java {
-    // Та же Java, что нужна самой игре 1.21.1, и она же уедет в готовый exe.
+    // Собираем двадцать первой - она же уедет в готовый exe для Windows.
     toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+// А байткод пишем под семнадцатую.
+//
+// Это про Мак и Линукс: там Java ставит сам игрок, и в системе чаще всего оказывается 17 - она
+// идёт в комплекте со многими программами. Джарник под 21 такая Java не запустит вовсе, и человек
+// упрётся в стену ещё до окна лаунчера. Под 17 он запускается, а Java для самой игры (ей нужна 21)
+// лаунчер скачивает у Mojang сам - см. Installer.runtime.
+tasks.withType(JavaCompile).configureEach {
+    options.release = 17
 }
 
 application {
