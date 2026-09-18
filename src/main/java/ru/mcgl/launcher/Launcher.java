@@ -73,6 +73,10 @@ public final class Launcher {
 	public static void main(String[] args) throws Exception {
 		// До окна: если на сайте лежит версия новее, запустимся уже с ней.
 		Update.apply(args);
+		if (args.length > 0 && "--plan".equals(args[0])) {
+			plan();
+			return;
+		}
 		if (args.length > 0 && ("--check".equals(args[0]) || "--install".equals(args[0]))) {
 			console(args);
 			return;
@@ -84,6 +88,25 @@ public final class Launcher {
 			return;
 		}
 		SwingUtilities.invokeLater(() -> new Launcher().show());
+	}
+
+	/**
+	 * Что поедет на этой системе: список библиотек по правилам, без единой загрузки.
+	 *
+	 * Система и железо берутся из {@link Os}, а их можно перебить свойствами - так проверяется
+	 * Мак и Линукс с чужой машины: {@code java -Dporakopatb.os=osx -Dporakopatb.arch=arm64 -jar ...
+	 * --plan}.
+	 */
+	private static void plan() throws Exception {
+		Site.Pack pack = Site.pack();
+		System.out.println("Система: " + Os.name() + " " + Os.arch());
+		java.util.List<String> libs = new Installer(Files2.home()).preview(pack);
+		System.out.println("Библиотек по правилам: " + libs.size());
+		for (String lib : libs) {
+			if (lib.contains("natives")) {
+				System.out.println("  натив: " + lib);
+			}
+		}
 	}
 
 	/** Проверка из командной строки: окно не открывается, игра не запускается. */

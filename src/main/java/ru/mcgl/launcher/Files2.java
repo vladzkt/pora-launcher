@@ -18,11 +18,7 @@ public final class Files2 {
 
 	/** Куда лаунчер кладёт игру: рядом с остальными играми человека, а не в папку программы. */
 	public static Path home() {
-		String appData = System.getenv("APPDATA");
-		if (appData != null && !appData.isBlank()) {
-			return Path.of(appData, ".porakopatb");
-		}
-		return Path.of(System.getProperty("user.home"), ".porakopatb");
+		return Os.dataHome("porakopatb");
 	}
 
 	/** Открыть папку или файл тем, чем система открывает такое обычно. */

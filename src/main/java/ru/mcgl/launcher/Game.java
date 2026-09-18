@@ -23,7 +23,12 @@ public final class Game {
 		return UUID.nameUUIDFromBytes(("OfflinePlayer:" + nick).getBytes(StandardCharsets.UTF_8));
 	}
 
-	/** Java, которой запускаем игру: та же, что вложена в сам лаунчер. */
+	/**
+	 * Java, которой запускаем игру: та же, что вложена в сам лаунчер.
+	 *
+	 * На Windows берём javaw.exe - он не открывает чёрное окно консоли; на Маке и Линуксе такого
+	 * разделения нет, там просто java.
+	 */
 	public static Path java() {
 		Path home = Path.of(System.getProperty("java.home"));
 		Path windows = home.resolve("bin").resolve("javaw.exe");
@@ -46,6 +51,11 @@ public final class Game {
 
 		List<String> cmd = new ArrayList<>();
 		cmd.add(java().toString());
+		// Маку это обязательно: без -XstartOnFirstThread LWJGL не создаёт окно вовсе, и игра
+		// падает на запуске. На остальных системах флага быть не должно.
+		if (Os.mac()) {
+			cmd.add("-XstartOnFirstThread");
+		}
 		cmd.add("-Xmx" + memoryMb + "M");
 		cmd.add("-Xms" + Math.min(memoryMb, 1024) + "M");
 		cmd.add("-Djava.library.path=" + plan.natives().toAbsolutePath());

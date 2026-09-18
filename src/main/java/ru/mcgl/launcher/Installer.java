@@ -35,7 +35,8 @@ public final class Installer {
 	private static final String RESOURCES = "https://resources.download.minecraft.net/";
 	private static final String FABRIC = "https://meta.fabricmc.net/v2/versions/loader/";
 	/** Как разрядность машины называется в правилах Mojang. */
-	private static final String ARCH = System.getProperty("os.arch", "").contains("64") ? "x86_64" : "x86";
+	/** Разрядность и семейство железа в именах Mojang: x86, x86_64, arm64. См. {@link Os}. */
+	private static final String ARCH = Os.arch();
 
 	/** Куда докладываем, что происходит: строка для человека и доля от нуля до единицы. */
 	public interface Progress {
@@ -50,6 +51,25 @@ public final class Installer {
 
 	public Installer(Path root) {
 		this.root = root;
+	}
+
+	/**
+	 * Что лаунчер взял бы на этой системе: имена библиотек, которые проходят правила.
+	 *
+	 * Нужно затем, что Мака и Линукса у нас под рукой нет, а проверить выбор надо. Вместе с
+	 * {@code -Dporakopatb.os} и {@code -Dporakopatb.arch} это даёт полный ответ, ничего не
+	 * скачивая: видно, что на Маке едут natives-macos, а на Apple Silicon - natives-macos-arm64.
+	 */
+	public List<String> preview(Site.Pack pack) throws IOException {
+		JsonObject version = versionJson(pack.minecraft());
+		List<String> taken = new ArrayList<>();
+		for (JsonElement element : version.getAsJsonArray("libraries")) {
+			JsonObject lib = element.getAsJsonObject();
+			if (allowed(lib)) {
+				taken.add(lib.get("name").getAsString());
+			}
+		}
+		return taken;
 	}
 
 	public Plan install(Site.Pack pack, Progress say) throws IOException {
@@ -142,8 +162,40 @@ public final class Installer {
 		return out;
 	}
 
+	/**
+	 * Подходит ли машинный код этой библиотеки нашему железу.
+	 *
+	 * Правила в манифесте различают только систему: у lwjgl-glfw:natives-macos и
+	 * natives-macos-arm64 правило одно и то же - «osx». Архитектура зашита в имя, и выбирать по
+	 * ней приходится самим. Пока этого не было, на Windows качались три набора нативов разом
+	 * (обычный, arm64 и x86), а на Маке в одну папку легли бы и Intel, и Apple Silicon - чей
+	 * файл распакуется первым, тот и остался бы.
+	 *
+	 * Заплатка macos-patch (freetype) - не про архитектуру, она нужна любому Маку.
+	 */
+	private static boolean archMatches(String name) {
+		int at = name.indexOf(":natives-");
+		if (at < 0) {
+			return true;
+		}
+		String classifier = name.substring(at + ":natives-".length());
+		if (classifier.endsWith("-patch")) {
+			return true;
+		}
+		String family = switch (Os.name()) {
+			case Os.WINDOWS -> "windows";
+			case Os.MAC -> "macos";
+			default -> "linux";
+		};
+		String want = "x86_64".equals(ARCH) ? family : family + "-" + ARCH;
+		return classifier.equals(want);
+	}
+
 	/** Правила библиотеки: разрешена ли она на этой системе. */
 	private static boolean allowed(JsonObject lib) {
+		if (!archMatches(lib.get("name").getAsString())) {
+			return false;
+		}
 		if (!lib.has("rules")) {
 			return true;
 		}
@@ -154,7 +206,9 @@ public final class Installer {
 			if (rule.has("os")) {
 				JsonObject os = rule.getAsJsonObject("os");
 				if (os.has("name")) {
-					applies = "windows".equals(os.get("name").getAsString());
+					// Раньше здесь стояла строка "windows", и на Маке с Линуксом правила читались
+					// наоборот: windows-библиотеки приезжали, родные отбрасывались.
+					applies = Os.name().equals(os.get("name").getAsString());
 				}
 				// Разрядность тоже важна: без неё к нам приезжали сборки под x86 и arm64.
 				if (applies && os.has("arch")) {
