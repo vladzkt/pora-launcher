@@ -76,6 +76,42 @@ public final class Update {
 	}
 
 	/**
+	 * Открытый ключ владельца: им сверяется подпись скачанного джарника.
+	 *
+	 * Закрытая часть лежит только на машине владельца и в репозиторий не коммитится, так что
+	 * подписать сборку не может ни сервер, ни тот, кто до сервера доберётся - в этом весь смысл
+	 * (предложение брата владельца, 19.09.2026: «ключ держим офлайн, открытую часть зашиваем в
+	 * лаунчер»). Сменить ключ можно только новой сборкой лаунчера.
+	 */
+	private static final String PUBLIC_KEY = "MCowBQYDK2VwAyEAtqxYPHEdWsPvmscsPA0UZ1zmCutJV3wHQnXVwLNh3vU=";
+
+	/**
+	 * Верна ли подпись джарника.
+	 *
+	 * Подпись лежит рядом файлом {@code <имя>.sig} - тем же, что кладёт tools/Sign.java. Нет файла,
+	 * кривая подпись, чужой ключ - ответ один: нет. Сумма защищает от порчи по дороге, подпись -
+	 * от подмены, и одно другое не заменяет.
+	 */
+	static boolean signed(Path jar) {
+		try {
+			Path sig = jar.resolveSibling(jar.getFileName() + ".sig");
+			if (!Files.isRegularFile(sig)) {
+				return false;
+			}
+			java.security.PublicKey key = java.security.KeyFactory.getInstance("Ed25519")
+					.generatePublic(new java.security.spec.X509EncodedKeySpec(
+						java.util.Base64.getDecoder().decode(PUBLIC_KEY)));
+			java.security.Signature check = java.security.Signature.getInstance("Ed25519");
+			check.initVerify(key);
+			check.update(Files.readAllBytes(jar));
+			return check.verify(java.util.Base64.getDecoder().decode(
+					Files.readString(sig, StandardCharsets.UTF_8).trim()));
+		} catch (Exception broken) {
+			return false;
+		}
+	}
+
+	/**
 	 * Уже скачанный джарник новее нашего: запускаемся с него, сайт не спрашиваем.
 	 *
 	 * <b>Только со знакомой суммой.</b> Раньше здесь проверялось одно имя файла: положи кто-нибудь
@@ -107,7 +143,7 @@ public final class Update {
 			if (version == null || !newer(version, bestVersion)) {
 				continue;
 			}
-			if (!known.equalsIgnoreCase(Files2.sha1(file))) {
+			if (!known.equalsIgnoreCase(Files2.sha1(file)) || !signed(file)) {
 				continue;
 			}
 			best = file;
@@ -189,6 +225,20 @@ public final class Update {
 		Site.download(Site.BASE + json.get("url").getAsString(), target);
 		if (!sha1.equalsIgnoreCase(Files2.sha1(target))) {
 			Files.deleteIfExists(target);
+			return null;
+		}
+		// Подпись владельца - последнее слово. Её кладут рядом с джарником тем же именем плюс .sig;
+		// нет её или не сходится - обновление не ставим и остаёмся на своей версии.
+		Path sig = target.resolveSibling(target.getFileName() + ".sig");
+		try {
+			Site.download(Site.BASE + json.get("url").getAsString() + ".sig", sig);
+		} catch (IOException noSignature) {
+			Files.deleteIfExists(target);
+			return null;
+		}
+		if (!signed(target)) {
+			Files.deleteIfExists(target);
+			Files.deleteIfExists(sig);
 			return null;
 		}
 		// Запоминаем сумму: с неё и только с неё этот джарник потом запустится.
