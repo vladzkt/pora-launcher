@@ -156,7 +156,7 @@ public final class Installer {
 				continue;
 			}
 			JsonObject art = downloads.getAsJsonObject("artifact");
-			Path file = root.resolve("libraries").resolve(art.get("path").getAsString());
+			Path file = Files2.inside(root.resolve("libraries"), art.get("path").getAsString());
 			need(file, art.get("size").getAsLong(), art.get("sha1").getAsString(), art.get("url").getAsString());
 			if (lib.get("name").getAsString().contains("natives-")) {
 				Files2.unpackNatives(file, natives);
@@ -246,7 +246,7 @@ public final class Installer {
 			String name = lib.get("name").getAsString();
 			String base = lib.has("url") ? lib.get("url").getAsString() : "https://maven.fabricmc.net/";
 			String rel = mavenPath(name);
-			Path file = root.resolve("libraries").resolve(rel);
+			Path file = Files2.inside(root.resolve("libraries"), rel);
 			if (!Files.isRegularFile(file)) {
 				Site.download(base + rel, file);
 			}
@@ -444,7 +444,8 @@ public final class Installer {
 		Files.createDirectories(mods);
 		Set<String> wanted = new HashSet<>();
 		for (Site.PackFile f : pack.files()) {
-			Path file = root.resolve(f.path());
+			// Путь из описи - только внутрь папки игры: см. Files2.inside.
+			Path file = Files2.inside(root, f.path());
 			String name = file.getFileName().toString();
 			wanted.add(name);
 			if (dev && name.startsWith(OURS)) {

@@ -75,20 +75,43 @@ public final class Update {
 		}
 	}
 
-	/** Уже скачанный джарник новее нашего: запускаемся с него, сайт не спрашиваем. */
+	/**
+	 * Уже скачанный джарник новее нашего: запускаемся с него, сайт не спрашиваем.
+	 *
+	 * <b>Только со знакомой суммой.</b> Раньше здесь проверялось одно имя файла: положи кто-нибудь
+	 * в эту папку «pora-launcher-9.9.9-all.jar» - и лаунчер исполнял бы его при каждом запуске, под
+	 * своим именем и со своими правами. Записать туда файл может лишь тот, кто уже хозяйничает на
+	 * машине игрока, - и всё же подставляться незачем: разбор в чате 19.09.2026 указал на это
+	 * справедливо.
+	 *
+	 * Теперь рядом лежит {@code known.sha1} - сумма того джарника, который мы сами скачали и
+	 * сверили. Не совпало или записи нет - файл не наш, запускаемся своей версией.
+	 */
 	private static Path newestNearby() throws IOException {
 		Path dir = store();
 		if (!Files.isDirectory(dir)) {
+			return null;
+		}
+		Path record = dir.resolve("known.sha1");
+		if (!Files.isRegularFile(record)) {
+			return null;
+		}
+		String known = Files.readString(record, StandardCharsets.UTF_8).trim().toLowerCase(java.util.Locale.ROOT);
+		if (known.isEmpty()) {
 			return null;
 		}
 		Path best = null;
 		String bestVersion = running();
 		for (Path file : list(dir)) {
 			String version = versionOf(file.getFileName().toString());
-			if (version != null && newer(version, bestVersion)) {
-				best = file;
-				bestVersion = version;
+			if (version == null || !newer(version, bestVersion)) {
+				continue;
 			}
+			if (!known.equalsIgnoreCase(Files2.sha1(file))) {
+				continue;
+			}
+			best = file;
+			bestVersion = version;
 		}
 		return best;
 	}
@@ -155,13 +178,22 @@ public final class Update {
 			return null;
 		}
 
+		// Без суммы не скачиваем вовсе: джарник, который мы потом запустим, обязан быть сверен.
+		// Раньше отсутствующая сумма означала «ну и ладно» - и это была единственная проверка на
+		// пути от сайта до запуска чужого кода.
+		String sha1 = json.has("sha1") ? json.get("sha1").getAsString() : "";
+		if (sha1.isEmpty()) {
+			return null;
+		}
 		Path target = store().resolve("pora-launcher-" + version + "-all.jar");
 		Site.download(Site.BASE + json.get("url").getAsString(), target);
-		String sha1 = json.has("sha1") ? json.get("sha1").getAsString() : "";
-		if (!sha1.isEmpty() && !sha1.equalsIgnoreCase(Files2.sha1(target))) {
+		if (!sha1.equalsIgnoreCase(Files2.sha1(target))) {
 			Files.deleteIfExists(target);
 			return null;
 		}
+		// Запоминаем сумму: с неё и только с неё этот джарник потом запустится.
+		Files.writeString(store().resolve("known.sha1"), sha1.toLowerCase(java.util.Locale.ROOT),
+				StandardCharsets.UTF_8);
 		// Прошлые версии не копим: нужна только та, с которой запускаемся.
 		for (Path old : list(store())) {
 			if (!old.equals(target) && versionOf(old.getFileName().toString()) != null) {

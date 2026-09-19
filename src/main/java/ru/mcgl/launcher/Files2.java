@@ -16,6 +16,34 @@ public final class Files2 {
 	private Files2() {
 	}
 
+	/**
+	 * Путь из описи - только внутрь своей папки.
+	 *
+	 * Опись приходит с сайта, и сайт у нас свой, но путь из неё всё равно нельзя подставлять в
+	 * {@code resolve} как есть: одна строка вида {@code ../launcher/pora-launcher-9.9.9-all.jar}
+	 * кладёт чужой джарник туда, откуда лаунчер запускается, и следующий запуск исполняет его.
+	 * Разбор 19.09.2026 (игрок в чате) указал на это верно, хотя и назвал это RCE: чтобы так
+	 * написать, надо сперва получить власть над нашим сайтом.
+	 *
+	 * Правило простое: относительный путь, без {@code ..} и без корня, и после разрешения он
+	 * обязан остаться внутри папки. Иначе - исключение, и ни один файл не тронут.
+	 */
+	public static Path inside(Path root, String relative) throws IOException {
+		if (relative == null || relative.isBlank()) {
+			throw new IOException("Пустой путь в описи");
+		}
+		String plain = relative.replace('\\', '/');
+		if (plain.startsWith("/") || plain.contains(":") || plain.contains("..")) {
+			throw new IOException("Подозрительный путь в описи: " + relative);
+		}
+		Path base = root.toAbsolutePath().normalize();
+		Path target = base.resolve(plain).normalize();
+		if (!target.startsWith(base)) {
+			throw new IOException("Путь из описи ведёт наружу: " + relative);
+		}
+		return target;
+	}
+
 	/** Куда лаунчер кладёт игру: рядом с остальными играми человека, а не в папку программы. */
 	public static Path home() {
 		return Os.dataHome("porakopatb");
