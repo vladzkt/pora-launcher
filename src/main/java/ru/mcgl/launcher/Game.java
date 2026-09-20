@@ -61,8 +61,12 @@ public final class Game {
 		cmd.add("-Xmx" + memoryMb + "M");
 		cmd.add("-Xms" + Math.min(memoryMb, 1024) + "M");
 		cmd.add("-Djava.library.path=" + plan.natives().toAbsolutePath());
-		// Разовый ключ для входа: мод на сервере проверит его через сайт и пустит игрока.
-		cmd.add("-Dporakopatb.token=" + account.token());
+		// Ключ для входа здесь НЕ передаётся - он уезжает переменной окружения, см. start().
+		//
+		// Командную строку чужого процесса на этой же машине читает любая программа,
+		// запущенная тем же человеком: на Windows через WMI, на Linux просто из
+		// /proc/<pid>/cmdline. Ключ от учётной записи сайта - это вход под ником игрока, и
+		// висел он там всю игру открытым текстом. Нашёл это аудит безопасности 20.09.2026.
 		cmd.add("-Dporakopatb.site=" + Site.BASE);
 		// Моды берутся не из папки игры, а оттуда, куда их только что расшифровали.
 		//
@@ -105,6 +109,9 @@ public final class Game {
 			String minecraft, String fabric, int memoryMb, Path mods) throws IOException {
 		ProcessBuilder builder = new ProcessBuilder(
 				command(root, plan, account, minecraft, fabric, memoryMb, mods));
+		// Ключ - сюда, а не в командную строку: окружение дочернего процесса чужой программе
+		// так просто не достаётся, а командная строка видна всем.
+		builder.environment().put("PORAKOPATB_TOKEN", account.token());
 		builder.directory(root.toFile());
 		builder.redirectErrorStream(true);
 		builder.redirectOutput(root.resolve("game.log").toFile());
