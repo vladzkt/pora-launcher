@@ -389,11 +389,9 @@ public final class Installer {
 				continue;
 			}
 			Path plain = Files.createTempFile("pk-dl-", ".tmp");
-			Site.download(f.url(), plain);
-			if (f.sha1() != null && !f.sha1().isEmpty() && !f.sha1().equalsIgnoreCase(Files2.sha1(plain))) {
-				Files.deleteIfExists(plain);
-				throw new IOException("Файл скачался испорченным: " + name);
-			}
+			// Размер и сумму отдаём самой загрузке: она повторит, дотянет хвост и больше не
+			// выдаёт оборванную связь за испорченный файл.
+			Site.download(f.url(), plain, f.size(), f.sha1());
 			Vault.put(plain, f.path(), packKey);
 			known.setProperty(f.path(), f.sha1());
 		}
@@ -590,10 +588,8 @@ public final class Installer {
 		if (Files2.matches(file, size, sha1)) {
 			return;
 		}
-		Site.download(url, file);
-		if (sha1 != null && !sha1.isEmpty() && !sha1.equalsIgnoreCase(Files2.sha1(file))) {
-			Files.deleteIfExists(file);
-			throw new IOException("Файл скачался испорченным: " + file.getFileName());
-		}
+		// Проверку не повторяем: download сам сверяет размер и сумму, сам повторяет с докачкой
+		// и сам говорит, что именно не вышло.
+		Site.download(url, file, size, sha1);
 	}
 }

@@ -189,20 +189,102 @@ public final class Site {
 	}
 
 	/** Скачать в файл, создав папки по дороге. Возвращает, сколько байт пришло. */
+	/** Сколько раз пробуем вытянуть файл, прежде чем сдаться. */
+	private static final int ATTEMPTS = 4;
+
 	public static long download(String url, Path to) throws IOException {
+		return download(url, to, -1L, null);
+	}
+
+	/**
+	 * Скачать с докачкой и повторами.
+	 *
+	 * <b>Зачем.</b> Прежде файл тянулся одним {@code Files.copy}, и это было неверно в самом
+	 * важном месте: <b>оборванный поток не считается ошибкой</b>. Связь пропала на середине -
+	 * поток просто кончился, copy отработал без жалоб, на диске остался огрызок. Дальше не
+	 * сходилась сумма, и лаунчер писал «Файл скачался испорченным», хотя файл на сервере был
+	 * цел, а порвалась связь.
+	 *
+	 * Разбирали это 21.09.2026 на живом канале владельца: мод 11 МБ тянулся минуту, и из трёх
+	 * попыток одна обрывалась. Сервер при этом отдавал файл целиком каждый раз - проверено с
+	 * него самого.
+	 *
+	 * <b>Как теперь.</b> Хвост остаётся на диске и дотягивается запросом Range, а не качается
+	 * заново: на медленном канале это разница между «дойдёт» и «не дойдёт никогда». Если
+	 * сервер докачку не умеет, берём файл сначала. Сумма не сошлась - хвост негодный, стираем
+	 * и начинаем чисто.
+	 *
+	 * @param size ожидаемый размер или -1, если неизвестен
+	 * @param sha1 ожидаемая сумма или null
+	 */
+	public static long download(String url, Path to, long size, String sha1) throws IOException {
 		Files.createDirectories(to.getParent());
 		Path temp = to.resolveSibling(to.getFileName() + ".part");
+		String trouble = "связь оборвалась";
+		for (int attempt = 1; attempt <= ATTEMPTS; attempt++) {
+			long have = Files.isRegularFile(temp) ? Files.size(temp) : 0L;
+			if (size > 0 && have > size) {
+				// Хвост длиннее целого файла - это мусор, а не хвост.
+				have = 0L;
+			}
+			try {
+				grab(url, temp, have);
+			} catch (IOException broken) {
+				// Хвост оставляем: следующая попытка продолжит с него.
+				trouble = broken.getMessage() == null ? "связь оборвалась" : broken.getMessage();
+				continue;
+			}
+			if (fits(temp, size, sha1)) {
+				// Кладём на место одним движением: прерванная загрузка не оставит битый файл
+				// под нужным именем.
+				Files.move(temp, to, StandardCopyOption.REPLACE_EXISTING);
+				return Files.size(to);
+			}
+			// Дотянули до конца, а сумма не та - значит, испорчен сам хвост. Чисто заново.
+			Files.deleteIfExists(temp);
+			trouble = "файл пришёл не целым";
+		}
+		Files.deleteIfExists(temp);
+		throw new IOException("Не удалось скачать " + to.getFileName() + " за "
+			+ ATTEMPTS + " попытки: " + trouble + ". Проверь интернет и попробуй ещё раз.");
+	}
+
+	/** Тянет файл целиком или, если {@code from} больше нуля, только хвост с этого места. */
+	private static void grab(String url, Path temp, long from) throws IOException {
 		HttpURLConnection link = open(url, 600000);
+		if (from > 0) {
+			link.setRequestProperty("Range", "bytes=" + from + "-");
+		}
 		int code = link.getResponseCode();
-		if (code != 200) {
+		if (code != 200 && code != 206) {
 			throw new IOException("Не скачалось (" + code + "): " + url);
 		}
-		try (InputStream in = link.getInputStream()) {
-			Files.copy(in, temp, StandardCopyOption.REPLACE_EXISTING);
+		// 206 - сервер понял Range и шлёт хвост, его дописываем. 200 - не понял и шлёт всё
+		// сначала, тогда прежнее содержимое затираем.
+		boolean tail = code == 206 && from > 0;
+		try (InputStream in = link.getInputStream();
+				java.io.OutputStream out = tail
+					? Files.newOutputStream(temp, java.nio.file.StandardOpenOption.CREATE,
+						java.nio.file.StandardOpenOption.APPEND)
+					: Files.newOutputStream(temp, java.nio.file.StandardOpenOption.CREATE,
+						java.nio.file.StandardOpenOption.TRUNCATE_EXISTING)) {
+			in.transferTo(out);
 		}
-		// Кладём на место одним движением: прерванная загрузка не оставит битый файл под нужным именем.
-		Files.move(temp, to, StandardCopyOption.REPLACE_EXISTING);
-		return Files.size(to);
+	}
+
+	/** Тот ли это файл: сходятся ли размер и сумма, насколько они известны. */
+	private static boolean fits(Path file, long size, String sha1) throws IOException {
+		if (!Files.isRegularFile(file)) {
+			return false;
+		}
+		if (size > 0 && Files.size(file) != size) {
+			return false;
+		}
+		if (sha1 == null || sha1.isEmpty()) {
+			// Ни суммы, ни размера - верим тому, что пришло: так было и раньше.
+			return size > 0 || Files.size(file) > 0;
+		}
+		return sha1.equalsIgnoreCase(Files2.sha1(file));
 	}
 
 	private static String read(InputStream in) throws IOException {
