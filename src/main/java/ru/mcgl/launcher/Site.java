@@ -252,13 +252,55 @@ public final class Site {
 		}
 	}
 
-	public static String text(String url) throws IOException {
-		HttpURLConnection link = open(url, 120000);
-		int code = link.getResponseCode();
-		if (code != 200) {
-			throw new IOException("Не ответил (" + code + "): " + url);
+	/**
+	 * Адреса Mojang и Fabric, которые сайт отдаёт через себя: {@code /mirror/<хост>/<путь>}.
+	 *
+	 * Зачем (29.09.2026). Сайт у игроков из России уже ходит через московского посредника, а игру
+	 * лаунчер ставит напрямую - с Mojang и с Fabric, и Fabric стоит за Cloudflare, который там режут:
+	 * игрок видел «Connection reset» на первой же установке, хотя через TLauncher со своими
+	 * зеркалами заходил. Теперь не ответил оригинал - тот же файл берётся через наш сайт (по тому
+	 * же маршруту, что и моды), а на московском маршруте - сразу через него. Суммы файлов
+	 * проверяются как раньше, так что посредник ничего не может подменить незаметно.
+	 */
+	private static final java.util.Set<String> MIRRORED = java.util.Set.of(
+		"piston-meta.mojang.com", "piston-data.mojang.com", "launchermeta.mojang.com",
+		"libraries.minecraft.net", "resources.download.minecraft.net",
+		"meta.fabricmc.net", "maven.fabricmc.net");
+
+	/** Тот же адрес через наш сайт, или null, если сайт такой хост не зеркалит. */
+	static String mirrored(String url) {
+		URI uri = URI.create(url);
+		if (!"https".equals(uri.getScheme()) || !MIRRORED.contains(uri.getHost())) {
+			return null;
 		}
-		return read(link.getInputStream());
+		return base + "/mirror/" + uri.getHost() + uri.getRawPath()
+			+ (uri.getRawQuery() == null ? "" : "?" + uri.getRawQuery());
+	}
+
+	/** Куда стучаться и в каком порядке: оригинал и зеркало, через Москву - зеркало первым. */
+	private static List<String> routes(String url) {
+		String mirror = mirrored(url);
+		if (mirror == null) {
+			return List.of(url);
+		}
+		return viaMoscow() ? List.of(mirror, url) : List.of(url, mirror);
+	}
+
+	public static String text(String url) throws IOException {
+		IOException last = null;
+		for (String route : routes(url)) {
+			try {
+				HttpURLConnection link = open(route, 120000);
+				int code = link.getResponseCode();
+				if (code != 200) {
+					throw new IOException("Не ответил (" + code + "): " + route);
+				}
+				return read(link.getInputStream());
+			} catch (IOException broken) {
+				last = broken;
+			}
+		}
+		throw last;
 	}
 
 	/** Скачать в файл, создав папки по дороге. Возвращает, сколько байт пришло. */
@@ -291,10 +333,24 @@ public final class Site {
 	 * @param sha1 ожидаемая сумма или null
 	 */
 	public static long download(String url, Path to, long size, String sha1) throws IOException {
+		List<String> routes = routes(url);
+		IOException last = null;
+		for (int i = 0; i < routes.size(); i++) {
+			try {
+				// Есть запасной путь - на первом не упираемся все четыре попытки, хватит двух.
+				return downloadVia(routes.get(i), to, size, sha1, i + 1 < routes.size() ? 2 : ATTEMPTS);
+			} catch (IOException broken) {
+				last = broken;
+			}
+		}
+		throw last;
+	}
+
+	private static long downloadVia(String url, Path to, long size, String sha1, int attempts) throws IOException {
 		Files.createDirectories(to.getParent());
 		Path temp = to.resolveSibling(to.getFileName() + ".part");
 		String trouble = "связь оборвалась";
-		for (int attempt = 1; attempt <= ATTEMPTS; attempt++) {
+		for (int attempt = 1; attempt <= attempts; attempt++) {
 			long have = Files.isRegularFile(temp) ? Files.size(temp) : 0L;
 			if (size > 0 && have > size) {
 				// Хвост длиннее целого файла - это мусор, а не хвост.
@@ -319,7 +375,7 @@ public final class Site {
 		}
 		Files.deleteIfExists(temp);
 		throw new IOException("Не удалось скачать " + to.getFileName() + " за "
-			+ ATTEMPTS + " попытки: " + trouble + ". Проверь интернет и попробуй ещё раз.");
+			+ attempts + " попытки: " + trouble + ". Проверь интернет и попробуй ещё раз.");
 	}
 
 	/** Тянет файл целиком или, если {@code from} больше нуля, только хвост с этого места. */
