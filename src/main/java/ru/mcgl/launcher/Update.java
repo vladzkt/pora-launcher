@@ -192,7 +192,7 @@ public final class Update {
 	}
 
 	private static Path fetchIfNewer(String have) throws IOException {
-		HttpURLConnection link = (HttpURLConnection) URI.create(Site.BASE + "/api/launcher/version")
+		HttpURLConnection link = (HttpURLConnection) URI.create(Site.base() + "/api/launcher/version")
 				.toURL().openConnection();
 		link.setConnectTimeout(CONNECT_MS);
 		link.setReadTimeout(READ_MS);
@@ -222,7 +222,7 @@ public final class Update {
 			return null;
 		}
 		Path target = store().resolve("pora-launcher-" + version + "-all.jar");
-		Site.download(Site.BASE + json.get("url").getAsString(), target);
+		Site.download(Site.base() + json.get("url").getAsString(), target);
 		if (!sha1.equalsIgnoreCase(Files2.sha1(target))) {
 			Files.deleteIfExists(target);
 			return null;
@@ -231,7 +231,7 @@ public final class Update {
 		// нет её или не сходится - обновление не ставим и остаёмся на своей версии.
 		Path sig = target.resolveSibling(target.getFileName() + ".sig");
 		try {
-			Site.download(Site.BASE + json.get("url").getAsString() + ".sig", sig);
+			Site.download(Site.base() + json.get("url").getAsString() + ".sig", sig);
 		} catch (IOException noSignature) {
 			Files.deleteIfExists(target);
 			return null;

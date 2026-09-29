@@ -30,7 +30,26 @@ import com.google.gson.JsonParser;
  */
 public final class Site {
 
-	public static final String BASE = "https://porakopatb.com";
+	public static final String MAIN = "https://porakopatb.com";
+	/**
+	 * Московское зеркало (29.09.2026): российские провайдеры режут трафик к Hetzner, где стоит
+	 * сайт, - соединение открывается, первые ~16 КБ проходят, дальше тишина. Через этот адрес
+	 * тот же сайт идёт посредником в Москве. Какой из двух брать, решает {@link #chooseRoute()}.
+	 */
+	public static final String RU = "https://ru.porakopatb.com";
+	private static final int PROBE_BYTES = 64 * 1024;
+	private static final int PROBE_MS = 6000;
+
+	private static volatile String base = MAIN;
+
+	/** Адрес сайта для этого запуска, без косой черты в конце. */
+	public static String base() {
+		return base;
+	}
+
+	public static boolean viaMoscow() {
+		return RU.equals(base);
+	}
 	private static final String AGENT = "PoraKopatb-Launcher/1.0";
 
 	/** Кто вошёл: ник, разовый ключ для игры, адрес скина и ключ «запомнить», если просили. */
@@ -46,7 +65,7 @@ public final class Site {
 	/** Один файл сборки: куда положить, сколько весит и какая у него сумма. */
 	public record PackFile(String path, long size, String sha1) {
 		public String url() {
-			return BASE + "/pack/" + path;
+			return base + "/pack/" + path;
 		}
 	}
 
@@ -56,7 +75,7 @@ public final class Site {
 
 	/** Скин игрока на сайте - из него лаунчер вырезает лицо для строки «Сейчас в игре». */
 	public static String skinUrl(String nick) {
-		return BASE + "/skin/" + nick + ".png";
+		return base + "/skin/" + nick + ".png";
 	}
 
 	/** Что показать в окне: новости, кто в игре и куда ведут кнопки. */
@@ -69,6 +88,60 @@ public final class Site {
 	}
 
 	private Site() {
+	}
+
+	/**
+	 * Основной адрес или зеркало: тянем 64 КБ {@code /api/probe}, первым - с того, что сработал в
+	 * прошлый раз. Маленький запрос ничего не доказывает: режущий провайдер пропускает первые
+	 * 16 КБ. Не дотянули ни с одного - остаёмся на прошлом выборе, дальше скажет сама загрузка.
+	 */
+	public static void chooseRoute() {
+		Path remembered = Files2.home().resolve("route.txt");
+		String last = "";
+		try {
+			last = Files.readString(remembered, StandardCharsets.UTF_8).trim();
+		} catch (IOException none) {
+			// первый запуск
+		}
+		String first = "ru".equals(last) ? RU : MAIN;
+		String second = first.equals(MAIN) ? RU : MAIN;
+		if (reaches(first)) {
+			base = first;
+		} else if (reaches(second)) {
+			base = second;
+		} else {
+			base = first;
+		}
+		try {
+			Files.createDirectories(remembered.getParent());
+			Files.writeString(remembered, viaMoscow() ? "ru" : "main", StandardCharsets.UTF_8);
+		} catch (IOException ignored) {
+			// не записали - в следующий раз просто пробуем по порядку
+		}
+	}
+
+	private static boolean reaches(String site) {
+		long deadline = System.currentTimeMillis() + PROBE_MS;
+		try {
+			HttpURLConnection link = open(site + "/api/probe", PROBE_MS);
+			if (link.getResponseCode() != 200) {
+				return false;
+			}
+			byte[] buffer = new byte[8192];
+			int total = 0;
+			try (InputStream in = link.getInputStream()) {
+				int n;
+				while ((n = in.read(buffer)) > 0) {
+					total += n;
+					if (System.currentTimeMillis() > deadline) {
+						return false;
+					}
+				}
+			}
+			return total >= PROBE_BYTES;
+		} catch (IOException | RuntimeException unreachable) {
+			return false;
+		}
 	}
 
 	private static HttpURLConnection open(String url, int timeoutMs) throws IOException {
@@ -105,7 +178,7 @@ public final class Site {
 	}
 
 	private static Account ask(JsonObject body) throws IOException {
-		HttpURLConnection link = open(BASE + "/api/launcher/login", 20000);
+		HttpURLConnection link = open(base + "/api/launcher/login", 20000);
 		link.setRequestMethod("POST");
 		link.setDoOutput(true);
 		link.setRequestProperty("content-type", "application/json");
@@ -136,7 +209,7 @@ public final class Site {
 	}
 
 	public static Pack pack() throws IOException {
-		JsonObject json = JsonParser.parseString(text(BASE + "/api/launcher/manifest")).getAsJsonObject();
+		JsonObject json = JsonParser.parseString(text(base + "/api/launcher/manifest")).getAsJsonObject();
 		List<PackFile> files = new ArrayList<>();
 		JsonArray list = json.getAsJsonArray("files");
 		for (int i = 0; i < list.size(); i++) {
@@ -154,7 +227,7 @@ public final class Site {
 	 */
 	public static Home home() {
 		try {
-			HttpURLConnection link = open(BASE + "/api/launcher/home", 8000);
+			HttpURLConnection link = open(base + "/api/launcher/home", 8000);
 			if (link.getResponseCode() != 200) {
 				return null;
 			}

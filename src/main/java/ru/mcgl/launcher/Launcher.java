@@ -71,6 +71,8 @@ public final class Launcher {
 	private boolean working;
 
 	public static void main(String[] args) throws Exception {
+		// Сначала - куда ходить: основной адрес или московское зеркало для игроков из РФ.
+		Site.chooseRoute();
 		// До окна: если на сайте лежит версия новее, запустимся уже с ней.
 		Update.apply(args);
 		if (args.length > 0 && "--plan".equals(args[0])) {
@@ -232,7 +234,7 @@ public final class Launcher {
 		body.add(crashBox);
 		body.add(Box.createVerticalGlue());
 
-		body.add(row(Skin.label("porakopatb.com · " + Update.running(),
+		body.add(row(Skin.label((Site.viaMoscow() ? "ru.porakopatb.com · " : "porakopatb.com · ") + Update.running(),
 				new java.awt.Color(0x5E6878), Font.PLAIN, 11f), 16));
 
 		Skin.Header head = new Skin.Header(image("head.png"), WIDTH, HEADER);
@@ -337,11 +339,11 @@ public final class Launcher {
 
 		left(panel, Box.createVerticalGlue());
 		left(panel, link("Настройки", this::openSetup));
-		left(panel, link("Регистрация", () -> open(Site.BASE + "/register")));
-		left(panel, link("Забыл пароль", () -> open(Site.BASE + "/forgot")));
-		left(panel, link("Вики сервера", () -> open(Site.BASE + "/wiki")));
-		left(panel, link("Карта мира", () -> open(Site.BASE + "/map")));
-		left(panel, link("Форум", () -> open(Site.BASE + "/forum")));
+		left(panel, link("Регистрация", () -> open(Site.base() + "/register")));
+		left(panel, link("Забыл пароль", () -> open(Site.base() + "/forgot")));
+		left(panel, link("Вики сервера", () -> open(Site.base() + "/wiki")));
+		left(panel, link("Карта мира", () -> open(Site.base() + "/map")));
+		left(panel, link("Форум", () -> open(Site.base() + "/forum")));
 		return panel;
 	}
 
