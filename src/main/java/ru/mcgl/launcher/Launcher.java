@@ -42,7 +42,10 @@ public final class Launcher {
 
 	private static final int WIDTH = 480;
 	private static final int SIDE = 372;
-	private static final int HEIGHT = 520;
+	// 560, а не 520 (01.10.2026): правой колонке понадобился блок «Скоро» - ближайшие события сервера.
+	private static final int HEIGHT = 560;
+	/** Сколько событий афиши показывать: строка на каждое. */
+	private static final int SOON_LINES = 3;
 	// Ровно доля картинки 920x320 при ширине окна: так она видна целиком и без искажений.
 	private static final int HEADER = 167;
 	private static final int PAD = 30;
@@ -58,6 +61,12 @@ public final class Launcher {
 	private Skin.Check remember;
 	private JPanel passBlock;
 	private JPanel newsBox;
+	/** Блок «Скоро»: заголовок и строки событий; спрятан, пока сайт не прислал афишу. */
+	private JPanel soonBlock;
+	private JPanel soonBox;
+	/** Афиша из последнего ответа сайта: по ней раз в полминуты пересчитывается «через сколько». */
+	private java.util.List<Site.Soon> soon = java.util.List.of();
+	private Timer soonTimer;
 	private JLabel onlineLine;
 	/** Строка «Сейчас в игре»: лица и ники, когда игроков немного. */
 	private JPanel onlineBox;
@@ -330,6 +339,23 @@ public final class Launcher {
 		left(panel, bar);
 		left(panel, Box.createVerticalStrut(8));
 
+		// Афиша (01.10.2026): что будет на сервере - сверху, потому что это про ближайший час, а
+		// новости подождут. Пока сайт не ответил, блока нет вовсе.
+		soonBlock = new JPanel();
+		soonBlock.setLayout(new BoxLayout(soonBlock, BoxLayout.Y_AXIS));
+		soonBlock.setBackground(Skin.PANEL);
+		soonBlock.setAlignmentX(0f);
+		left(soonBlock, row(Skin.caption("Скоро"), 16, Skin.PANEL));
+		left(soonBlock, Box.createVerticalStrut(4));
+		soonBox = new JPanel();
+		soonBox.setLayout(new BoxLayout(soonBox, BoxLayout.Y_AXIS));
+		soonBox.setBackground(Skin.PANEL);
+		soonBox.setAlignmentX(0f);
+		left(soonBlock, soonBox);
+		left(soonBlock, Box.createVerticalStrut(14));
+		soonBlock.setVisible(false);
+		left(panel, soonBlock);
+
 		left(panel, row(Skin.caption("Новости"), 16, Skin.PANEL));
 		left(panel, Box.createVerticalStrut(6));
 		newsBox = new JPanel();
@@ -439,12 +465,22 @@ public final class Launcher {
 				left(newsBox, row(Skin.label("Сайт не ответил", Skin.MUTED, Font.PLAIN, 12f), 20, Skin.PANEL));
 				onlineLine.setText("неизвестно");
 			} else {
+				soon = home.soon();
+				fillSoon();
+				if (soonTimer == null) {
+					// «Через 40 мин» должно убывать, пока окно открыто: пересчёт по уже пришедшей
+					// афише, без нового запроса к сайту.
+					soonTimer = new Timer(30_000, tick -> fillSoon());
+					soonTimer.start();
+				}
 				if (home.news().isEmpty()) {
 					left(newsBox, row(Skin.label("Пока тихо", Skin.MUTED, Font.PLAIN, 12f), 20, Skin.PANEL));
 				}
+				// Афиша заняла место - новостей на одну меньше: окно не резиновое.
+				int most = soonBlock.isVisible() ? 3 : 4;
 				int shown = 0;
 				for (Site.News one : home.news()) {
-					if (shown++ >= 4) {
+					if (shown++ >= most) {
 						break;
 					}
 					Skin.Link item = new Skin.Link(one.title(), 13f, false, () -> open(one.url()));
@@ -465,6 +501,101 @@ public final class Launcher {
 			newsBox.revalidate();
 			newsBox.repaint();
 		});
+	}
+
+	/**
+	 * Строки афиши: «через 40 мин · Вождь огров выходит в логово». Остаток считается по часам
+	 * игрока от момента начала, а не берётся готовой строкой сайта: окно бывает открыто подолгу, и
+	 * у игрока свой пояс. Прошедшее отбрасывается; щелчок ведёт на страницу событий.
+	 */
+	private void fillSoon() {
+		soonBox.removeAll();
+		long now = System.currentTimeMillis();
+		int shown = 0;
+		for (Site.Soon one : soon) {
+			String lead = lead(one, now);
+			if (lead == null) {
+				continue;
+			}
+			if (shown++ >= SOON_LINES) {
+				break;
+			}
+			Skin.Link item = new Skin.Link(lead + " · " + one.title(), 12.5f, false, () -> open(Site.base() + "/events"));
+			item.setToolTipText(tip(one));
+			item.setAlignmentX(0f);
+			item.setMaximumSize(new Dimension(SIDE - 44, 20));
+			left(soonBox, item);
+		}
+		boolean was = soonBlock.isVisible();
+		soonBlock.setVisible(shown > 0);
+		soonBox.revalidate();
+		soonBox.repaint();
+		if (was != soonBlock.isVisible()) {
+			soonBlock.getParent().revalidate();
+		}
+	}
+
+	/** Левая часть строки: «через 40 мин», «ещё 35 мин», «сейчас», «15:00–01:00»; null - уже прошло. */
+	private static String lead(Site.Soon one, long now) {
+		return switch (one.state()) {
+			case "live" -> one.until() > 0 && one.until() <= now ? null
+					: one.until() > now ? "ещё " + span(one.until() - now) : "сейчас";
+			case "window" -> one.until() <= now ? null
+					: now >= one.at() ? "до " + clock(one.until())
+					: (sameDay(one.at(), now) ? "" : "завтра ") + clock(one.at()) + "–" + clock(one.until());
+			default -> one.at() <= now - 5 * 60_000L ? null
+					: one.at() > now ? "через " + span(one.at() - now) : "сейчас";
+		};
+	}
+
+	/** Остаток словами, вверх до минуты: «40 мин», «2 ч 15 мин», «3 дн». */
+	private static String span(long ms) {
+		long minutes = Math.max(1L, (ms + 59_999L) / 60_000L);
+		if (minutes >= 48 * 60) {
+			return minutes / (24 * 60) + " дн";
+		}
+		if (minutes >= 60) {
+			return minutes % 60 == 0 ? minutes / 60 + " ч" : minutes / 60 + " ч " + minutes % 60 + " мин";
+		}
+		return minutes + " мин";
+	}
+
+	private static java.time.ZonedDateTime local(long at) {
+		return java.time.Instant.ofEpochMilli(at).atZone(java.time.ZoneId.systemDefault());
+	}
+
+	private static String clock(long at) {
+		java.time.ZonedDateTime when = local(at);
+		return String.format("%02d:%02d", when.getHour(), when.getMinute());
+	}
+
+	private static boolean sameDay(long at, long now) {
+		return local(at).toLocalDate().equals(local(now).toLocalDate());
+	}
+
+	/** Подсказка над строкой: название целиком, где, и когда - по часам этого компьютера. */
+	private static String tip(Site.Soon one) {
+		StringBuilder out = new StringBuilder("<html><b>").append(html(one.title())).append("</b>");
+		if (!one.where().isEmpty()) {
+			out.append("<br>").append(html(one.where()));
+		}
+		java.time.ZonedDateTime start = local(one.at());
+		String day = String.format("%02d.%02d %s", start.getDayOfMonth(), start.getMonthValue(), clock(one.at()));
+		switch (one.state()) {
+			case "live" -> {
+				if (one.until() > 0) {
+					out.append("<br>до ").append(clock(one.until()));
+				}
+			}
+			case "window" -> out.append("<br>").append(day).append("–").append(clock(one.until()))
+					.append(", минуту город выберет сам");
+			default -> out.append("<br>начало: ").append(day);
+		}
+		return out.append("<br>Щелчок - всё расписание на сайте</html>").toString();
+	}
+
+	private static String html(String text) {
+		return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
 	}
 
 	/** Когда собран пак: версия приходит временем последней правки вида 20260914090330. */
