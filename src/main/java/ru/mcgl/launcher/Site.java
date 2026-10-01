@@ -78,9 +78,19 @@ public final class Site {
 		return base + "/skin/" + nick + ".png";
 	}
 
-	/** Что показать в окне: новости, кто в игре и куда ведут кнопки. */
+	/**
+	 * Событие из афиши сервера (01.10.2026): вождь огров, счастливый час, закупка города и прочее.
+	 * {@code state} - soon (начнётся в {@code at}), live (идёт, до {@code until}; 0 - неизвестно
+	 * до какого) или window (минута ещё не выбрана, будет между {@code at} и {@code until}).
+	 * {@code when} - готовое «когда» по Киеву от сайта: для подсказки, а остаток лаунчер считает
+	 * сам по своим часам.
+	 */
+	public record Soon(String id, String state, String title, String where, String when, long at, long until) {
+	}
+
+	/** Что показать в окне: новости, кто в игре, ближайшие события и куда ведут кнопки. */
 	public record Home(java.util.List<News> news, boolean online, java.util.List<String> players,
-			String register, String wiki, String map, String forum) {
+			String register, String wiki, String map, String forum, java.util.List<Soon> soon) {
 	}
 
 	/** Что игрок должен иметь у себя, чтобы зайти на сервер. */
@@ -259,10 +269,48 @@ public final class Site {
 			JsonObject links = json.getAsJsonObject("links");
 			return new Home(news, json.get("online").getAsBoolean(), players,
 					links.get("register").getAsString(), links.get("wiki").getAsString(),
-					links.get("map").getAsString(), links.get("forum").getAsString());
+					links.get("map").getAsString(), links.get("forum").getAsString(), soon(json));
 		} catch (Exception quiet) {
 			return null;
 		}
+	}
+
+	/**
+	 * Афиша из ответа {@code /api/launcher/home}. Её может не быть (сайт старее лаунчера) или она
+	 * может прийти кривой - тогда пустой список: окно без афиши работает, как раньше, а сломанная
+	 * запись не должна отнимать новости и онлайн.
+	 */
+	private static List<Soon> soon(JsonObject json) {
+		List<Soon> out = new ArrayList<>();
+		try {
+			if (!json.has("soon") || !json.get("soon").isJsonArray()) {
+				return out;
+			}
+			for (JsonElement e : json.getAsJsonArray("soon")) {
+				if (!e.isJsonObject()) {
+					continue;
+				}
+				JsonObject one = e.getAsJsonObject();
+				String title = string(one, "title");
+				if (title.isEmpty()) {
+					continue;
+				}
+				out.add(new Soon(string(one, "id"), string(one, "state"), title, string(one, "where"),
+						string(one, "when"), number(one, "at"), number(one, "until")));
+			}
+		} catch (RuntimeException quiet) {
+			out.clear();
+		}
+		return out;
+	}
+
+	private static String string(JsonObject one, String key) {
+		return one.has(key) && one.get(key).isJsonPrimitive() ? one.get(key).getAsString() : "";
+	}
+
+	private static long number(JsonObject one, String key) {
+		return one.has(key) && one.get(key).isJsonPrimitive() && one.get(key).getAsJsonPrimitive().isNumber()
+				? one.get(key).getAsLong() : 0L;
 	}
 
 	/**
