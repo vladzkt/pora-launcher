@@ -178,6 +178,9 @@ public final class Site {
 	}
 
 	private static Account ask(JsonObject body) throws IOException {
+		// Отпечаток компьютера - хеш, не сам идентификатор (см. Machine). По нему сайт держит правило
+		// «не больше двух аккаунтов на компьютер» - одинаково для входа по паролю и по ключу.
+		body.addProperty("machine", Machine.id());
 		HttpURLConnection link = open(base + "/api/launcher/login", 20000);
 		link.setRequestMethod("POST");
 		link.setDoOutput(true);
@@ -189,7 +192,8 @@ public final class Site {
 		String answer = read(link.getResponseCode() < 400 ? link.getInputStream() : link.getErrorStream());
 		JsonObject json = JsonParser.parseString(answer).getAsJsonObject();
 		if (!json.has("ok") || !json.get("ok").getAsBoolean()) {
-			throw new IOException(reason(json.has("error") ? json.get("error").getAsString() : ""));
+			throw new IOException(reason(json.has("error") ? json.get("error").getAsString() : "",
+					json.has("scope") && json.get("scope").isJsonPrimitive() ? json.get("scope").getAsString() : ""));
 		}
 		return new Account(json.get("nick").getAsString(), json.get("token").getAsString(),
 				json.has("skin") ? json.get("skin").getAsString() : "",
@@ -197,13 +201,22 @@ public final class Site {
 				json.has("packKey") ? json.get("packKey").getAsString() : "");
 	}
 
-	/** Ошибку сайта показываем по-человечески: код для нас, строка для игрока. */
-	private static String reason(String code) {
+	/**
+	 * Ошибку сайта показываем по-человечески: код для нас, строка для игрока. {@code scope}
+	 * уточняет код там, где одной причины мало: третий аккаунт упёрся в компьютер ({@code machine})
+	 * или в интернет ({@code ip}), и игроку в этих случаях делать разное.
+	 */
+	private static String reason(String code, String scope) {
 		return switch (code) {
 			case "bad_credentials" -> "Ник или пароль не подошли.";
 			case "banned" -> "Эта учётная запись заблокирована.";
 			case "too_often" -> "Слишком много попыток. Подожди несколько минут.";
 			case "device_gone" -> "Сохранённый вход больше не годится - введи пароль.";
+			case "too_many_accounts" -> "ip".equals(scope)
+					? "С этого интернета уже играют два аккаунта, третий войти не может. "
+						+ "Живёте вместе - напишите администрации, аккаунт добавят в исключения."
+					: "На этом компьютере уже играют два аккаунта, третий войти не может. "
+						+ "Если это ошибка - напишите администрации.";
 			default -> "Сайт ответил отказом. Попробуй позже.";
 		};
 	}

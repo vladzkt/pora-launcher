@@ -230,7 +230,8 @@ public final class Launcher {
 		body.add(Box.createVerticalStrut(9));
 
 		status = Skin.label(" ", Skin.MUTED, Font.PLAIN, 12f);
-		body.add(row(status, 18));
+		statusRow = row(status, STATUS_LINE);
+		body.add(statusRow);
 		crashBox = new JPanel();
 		crashBox.setLayout(new BoxLayout(crashBox, BoxLayout.Y_AXIS));
 		crashBox.setBackground(Skin.BG);
@@ -581,7 +582,7 @@ public final class Launcher {
 	 * её своими словами, а даём открыть лог одним нажатием.
 	 */
 	private void crashed(int code) {
-		status.setText("Игра закрылась сразу (код " + code + ")");
+		plain("Игра закрылась сразу (код " + code + ")");
 		if (crashLink == null) {
 			crashLink = new Skin.Link("Показать лог игры", 12f, false,
 					() -> Files2.reveal(root.resolve("game.log")));
@@ -634,7 +635,7 @@ public final class Launcher {
 				});
 				Installer.Plan plan = new Installer(root).install(pack, account.packKey(), (what, done) ->
 						SwingUtilities.invokeLater(() -> {
-							status.setText(what);
+							plain(what);
 							bar.set(done);
 						}));
 
@@ -683,7 +684,7 @@ public final class Launcher {
 					working = false;
 					bar.setVisible(false);
 					play.setOn(true);
-					status.setText(message);
+					showError(message);
 				});
 			}
 		}, "поехали").start();
@@ -712,7 +713,41 @@ public final class Launcher {
 	}
 
 	private void say(String what) {
-		SwingUtilities.invokeLater(() -> status.setText(what));
+		SwingUtilities.invokeLater(() -> plain(what));
+	}
+
+	/** Высота строки под полосой, когда в ней одна строка текста. */
+	private static final int STATUS_LINE = 18;
+	/**
+	 * Ширина, на которой переносится длинная ошибка. Тело окна - 420 точек, но HTML в Swing читает
+	 * px как пункты и растягивает в 1.3 раза: 410 выходили в 533 точки, за край окна. 310 - это 403
+	 * точки на экране (замер шрифтом Segoe UI 12, 01.10.2026).
+	 */
+	private static final int STATUS_WRAP = 310;
+	private JPanel statusRow;
+
+	/** Обычная строка хода дел - в одну строку, как была. */
+	private void plain(String what) {
+		status.setText(what);
+		fitStatus(STATUS_LINE);
+	}
+
+	/**
+	 * Ошибка целиком, в несколько строк (01.10.2026). Отказ «третий аккаунт» с советом написать
+	 * администрации не влезал в одну строку и обрезался на полуслове - а совет и есть то, ради чего
+	 * его читают.
+	 */
+	private void showError(String message) {
+		String safe = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+		status.setText("<html><div style='width:" + STATUS_WRAP + "px'>" + safe + "</div></html>");
+		fitStatus(Math.max(STATUS_LINE, status.getPreferredSize().height));
+	}
+
+	private void fitStatus(int height) {
+		statusRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, height));
+		statusRow.setPreferredSize(new Dimension(0, height));
+		statusRow.revalidate();
+		statusRow.repaint();
 	}
 
 	private void load() {
