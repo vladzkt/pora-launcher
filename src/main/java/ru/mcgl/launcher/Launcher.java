@@ -71,6 +71,10 @@ public final class Launcher {
 	private JPanel tgBox;
 	/** Куда ведёт кнопка «Привязать Телеграм»: ссылка в бота с кодом из последнего ответа сайта. */
 	private volatile String tgLinkNow = "";
+	/** Когда пришла tgLinkNow. Код в ней сайт держит живым не меньше пяти минут с ответа, дальше - как повезёт. */
+	private volatile long tgLinkAt;
+	/** Свежую ссылку уже спрашиваем у сайта: второе нажатие кнопки не шлёт второй вход. */
+	private volatile boolean tgAsking;
 	private Timer spinner;
 	private boolean working;
 
@@ -804,7 +808,7 @@ public final class Launcher {
 		tgBox.setBorder(new EmptyBorder(6, 0, 0, 0));
 		tgBox.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
 		tgBox.setPreferredSize(new Dimension(0, 34));
-		tgBox.add(new Skin.LineButton("Привязать Телеграм", () -> open(tgLinkNow)));
+		tgBox.add(new Skin.LineButton("Привязать Телеграм", this::openTelegram));
 		tgBox.add(Box.createHorizontalStrut(10));
 		tgBox.add(Skin.label("без него сервер не пустит в игру", Skin.MUTED, Font.PLAIN, 12f));
 		tgBox.add(Box.createHorizontalGlue());
@@ -818,16 +822,78 @@ public final class Launcher {
 	 */
 	private void setTelegram(boolean need, String link) {
 		if (need) {
-			String nick = settings.getProperty("nick", "");
-			tgLinkNow = link != null && link.startsWith("https://t.me/")
-					? link
-					: Site.base() + (nick.isEmpty() ? "/login" : "/u/" + nick + "#tg");
+			tgLinkNow = link != null && link.startsWith(TG_LINK) ? link : profileLink();
+			tgLinkAt = System.currentTimeMillis();
 			// Строка про упавшую игру тут лишняя: мешает сейчас Телеграм, а не она.
 			crashBox.setVisible(false);
 		}
 		tgBox.setVisible(need);
 		tgBox.getParent().revalidate();
 		tgBox.getParent().repaint();
+	}
+
+	/** Свой профиль на сайте: там та же кнопка «Привязать Телеграм». */
+	private String profileLink() {
+		String nick = settings.getProperty("nick", "");
+		return Site.base() + (nick.isEmpty() ? "/login" : "/u/" + nick + "#tg");
+	}
+
+	/** Только такие ссылки из ответа сайта открываем как есть: бот Телеграма, и ничего другого. */
+	private static final String TG_LINK = "https://t.me/";
+	/**
+	 * Сколько ссылке с кодом верить без перепроверки. Сайт отдаёт код, которому жить ещё не меньше
+	 * пяти минут; минута - запас на дорогу ответа и на то, чтобы игрок дошёл до «Запустить» в боте.
+	 */
+	private static final long TG_LINK_FRESH_MS = 4 * 60_000;
+
+	/**
+	 * Кнопка «Привязать Телеграм». Код в ссылке живёт четверть часа, а гигабайт игры по слабому
+	 * каналу качается дольше - и кнопка, нажатая под конец установки, открывала бы протухший код.
+	 * Бот отвечал «не подошёл, нажми кнопку ещё раз», та открывала тот же код, и так по кругу.
+	 * Поэтому старую ссылку не открываем, а сперва спрашиваем у сайта свежую - тем же входом, что
+	 * и «Играть»; не вышло - открываем профиль на сайте, там код заводится по нажатию.
+	 */
+	private void openTelegram() {
+		String link = tgLinkNow;
+		if (!link.startsWith(TG_LINK) || System.currentTimeMillis() - tgLinkAt < TG_LINK_FRESH_MS) {
+			open(link);
+			return;
+		}
+		if (tgAsking) {
+			return;
+		}
+		String who = nick.getText().trim();
+		String secret = new String(password.getPassword());
+		String key = saved();
+		if (who.isEmpty() || (secret.isEmpty() && key.isEmpty())) {
+			open(profileLink());
+			return;
+		}
+		tgAsking = true;
+		new Thread(() -> {
+			Site.Account account = null;
+			try {
+				account = secret.isEmpty() ? Site.loginSaved(key) : Site.login(who, secret, false);
+			} catch (Exception broken) {
+				// Сайт не ответил или вход не принят - дорога через профиль остаётся.
+			}
+			Site.Account fresh = account;
+			SwingUtilities.invokeLater(() -> {
+				tgAsking = false;
+				if (fresh == null) {
+					open(profileLink());
+				} else if (fresh.needTg()) {
+					setTelegram(true, fresh.tgLink());
+					open(tgLinkNow);
+				} else {
+					// Пока качалось, он уже привязал - открывать нечего, можно играть.
+					setTelegram(false, "");
+					if (!working) {
+						plain("Телеграм привязан - жми «Играть».");
+					}
+				}
+			});
+		}, "телеграм").start();
 	}
 
 	private void fitStatus(int height) {
