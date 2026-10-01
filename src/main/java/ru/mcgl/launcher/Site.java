@@ -58,8 +58,13 @@ public final class Site {
 	 *
 	 * {@code packKey} - ключ от кладовой модов. Сборка лежит на диске зашифрованной, и без
 	 * ключа её не прочитать; ключ выдаётся только вошедшему и нигде не сохраняется.
+	 *
+	 * {@code needTg} - Телеграм не привязан, и игровой сервер такого игрока не пустит (01.10.2026);
+	 * {@code tgLink} - ссылка в бота с кодом привязки внутри, её открывает кнопка «Привязать Телеграм».
+	 * Сайт до этой правки полей не присылал - тогда false и пустая строка, как и было.
 	 */
-	public record Account(String nick, String token, String skin, String device, String packKey) {
+	public record Account(String nick, String token, String skin, String device, String packKey,
+			boolean needTg, String tgLink) {
 	}
 
 	/** Один файл сборки: куда положить, сколько весит и какая у него сумма. */
@@ -198,7 +203,9 @@ public final class Site {
 		return new Account(json.get("nick").getAsString(), json.get("token").getAsString(),
 				json.has("skin") ? json.get("skin").getAsString() : "",
 				json.has("device") ? json.get("device").getAsString() : "",
-				json.has("packKey") ? json.get("packKey").getAsString() : "");
+				json.has("packKey") ? json.get("packKey").getAsString() : "",
+				json.has("need_tg") && json.get("need_tg").isJsonPrimitive() && json.get("need_tg").getAsBoolean(),
+				json.has("tg_link") && json.get("tg_link").isJsonPrimitive() ? json.get("tg_link").getAsString() : "");
 	}
 
 	/**

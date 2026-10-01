@@ -67,6 +67,10 @@ public final class Launcher {
 	private JLabel status;
 	private JPanel crashBox;
 	private Skin.Link crashLink;
+	/** Строка «Привязать Телеграм» под ходом дел: видна, пока сайт говорит need_tg. */
+	private JPanel tgBox;
+	/** Куда ведёт кнопка «Привязать Телеграм»: ссылка в бота с кодом из последнего ответа сайта. */
+	private volatile String tgLinkNow = "";
 	private Timer spinner;
 	private boolean working;
 
@@ -89,9 +93,9 @@ public final class Launcher {
 			return;
 		}
 		if (args.length > 0 && "--shot".equals(args[0])) {
-			// Третьим доводом «setup» снимается окно настроек, иначе главное.
-			shot(args.length > 1 ? args[1] : "launcher.png",
-					args.length > 2 && "setup".equals(args[2]));
+			// Третьим доводом «setup» снимается окно настроек, «tg» - главное с отказом «сначала
+			// привяжи Телеграм» (самая тесная раскладка: поле пароля, ошибка и кнопка разом), иначе главное.
+			shot(args.length > 1 ? args[1] : "launcher.png", args.length > 2 ? args[2] : "");
 			return;
 		}
 		SwingUtilities.invokeLater(() -> new Launcher().show());
@@ -136,12 +140,21 @@ public final class Launcher {
 	}
 
 	/** Рисуем окно в файл, чтобы посмотреть на него, никому его не показывая. */
-	private static void shot(String file, boolean setup) throws Exception {
+	private static void shot(String file, String mode) throws Exception {
+		boolean setup = "setup".equals(mode);
 		SwingUtilities.invokeAndWait(() -> new Launcher().show());
 		Thread.sleep(setup ? 300 : 2500);
 		if (setup) {
 			SwingUtilities.invokeAndWait(() -> SHOWN.openSetup());
 			Thread.sleep(400);
+		}
+		if ("tg".equals(mode)) {
+			SwingUtilities.invokeAndWait(() -> {
+				SHOWN.passBlock.setVisible(true);
+				SHOWN.setTelegram(true, "https://t.me/");
+				SHOWN.showError(TG_FIRST);
+			});
+			Thread.sleep(300);
 		}
 		SwingUtilities.invokeAndWait(() -> {
 			Launcher one = SHOWN;
@@ -238,6 +251,7 @@ public final class Launcher {
 		crashBox.setMaximumSize(new Dimension(Integer.MAX_VALUE, 22));
 		crashBox.setVisible(false);
 		body.add(crashBox);
+		body.add(tgRow());
 		body.add(Box.createVerticalGlue());
 
 		body.add(row(Skin.label((Site.viaMoscow() ? "ru.porakopatb.com · " : "porakopatb.com · ") + Update.running(),
@@ -622,11 +636,15 @@ public final class Launcher {
 				Site.Account account = secret.isEmpty()
 						? Site.loginSaved(key)
 						: Site.login(who, secret, remember.isOn());
+				long askedAt = System.currentTimeMillis();
 				settings.setProperty("nick", account.nick());
 				if (!account.device().isEmpty()) {
 					settings.setProperty("device", account.device());
 				}
 				save();
+				// Без Телеграма сервер не пустит (01.10.2026) - кнопка сразу, а игра ставится дальше:
+				// пока качается гигабайт, как раз есть время привязать.
+				SwingUtilities.invokeLater(() -> setTelegram(account.needTg(), account.tgLink()));
 
 				Site.Pack pack = Site.pack();
 				SwingUtilities.invokeLater(() -> {
@@ -639,10 +657,30 @@ public final class Launcher {
 							bar.set(done);
 						}));
 
+				// Игру, которую сервер не пустит, не запускаем: человек ждал бы минуту загрузки ради
+				// отказа на входе - ровно то, от чего эта проверка. Пока шла установка, он мог уже
+				// привязать, поэтому спрашиваем сайт ещё раз; если с ответа прошло несколько секунд.
+				Site.Account player = account;
+				if (player.needTg() && System.currentTimeMillis() - askedAt > RECHECK_AFTER_MS) {
+					say("Проверяю Телеграм");
+					player = secret.isEmpty() ? Site.loginSaved(key) : Site.login(who, secret, false);
+					Site.Account fresh = player;
+					SwingUtilities.invokeLater(() -> setTelegram(fresh.needTg(), fresh.tgLink()));
+				}
+				if (player.needTg()) {
+					SwingUtilities.invokeLater(() -> {
+						working = false;
+						bar.setVisible(false);
+						play.setOn(true);
+						showError(TG_FIRST);
+					});
+					return;
+				}
+
 				say("Запускаю игру");
 				// Моды расшифровываются сюда и живут ровно столько, сколько идёт игра.
-				Path unpacked = Vault.unpack(pack.files(), account.packKey());
-				Process game = Game.start(root, plan, account, pack.minecraft(), pack.fabric(),
+				Path unpacked = Vault.unpack(pack.files(), player.packKey());
+				Process game = Game.start(root, plan, player, pack.minecraft(), pack.fabric(),
 						memory(), unpacked);
 				SwingUtilities.invokeLater(() -> frame.setVisible(false));
 				// Игра встаёт на ноги секунд десять. Если она умерла за это время - это не запуск,
@@ -684,6 +722,9 @@ public final class Launcher {
 					working = false;
 					bar.setVisible(false);
 					play.setOn(true);
+					// Ошибка в несколько строк и строка Телеграма вместе в окно не влезают; ошибка
+					// важнее, а кнопка вернётся со следующим «Играть».
+					setTelegram(false, "");
 					showError(message);
 				});
 			}
@@ -741,6 +782,52 @@ public final class Launcher {
 		String safe = message.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
 		status.setText("<html><div style='width:" + STATUS_WRAP + "px'>" + safe + "</div></html>");
 		fitStatus(Math.max(STATUS_LINE, status.getPreferredSize().height));
+	}
+
+	/**
+	 * Что сказать, когда игра поставлена, а Телеграм так и не привязан. Короткое нарочно: строка с
+	 * кнопкой стоит прямо под ним, и вместе с полем пароля в окно влезает одна строка текста, не две.
+	 */
+	static final String TG_FIRST = "Сначала привяжи Телеграм кнопкой ниже, потом снова «Играть».";
+	/** Перепроверять Телеграм перед запуском, только если с ответа сайта прошло больше этого. */
+	private static final long RECHECK_AFTER_MS = 5000;
+
+	/**
+	 * Строка «Привязать Телеграм» (01.10.2026). Раньше новичок узнавал, что Телеграм обязателен, только
+	 * когда сервер выбрасывал его из уже скачанной и запущенной игры. Теперь сайт говорит это на входе
+	 * в лаунчер (need_tg), и кнопка открывает бота сразу с кодом привязки - бот привяжет по «Запустить».
+	 */
+	private JPanel tgRow() {
+		tgBox = new JPanel();
+		tgBox.setLayout(new BoxLayout(tgBox, BoxLayout.X_AXIS));
+		tgBox.setBackground(Skin.BG);
+		tgBox.setBorder(new EmptyBorder(6, 0, 0, 0));
+		tgBox.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
+		tgBox.setPreferredSize(new Dimension(0, 34));
+		tgBox.add(new Skin.LineButton("Привязать Телеграм", () -> open(tgLinkNow)));
+		tgBox.add(Box.createHorizontalStrut(10));
+		tgBox.add(Skin.label("без него сервер не пустит в игру", Skin.MUTED, Font.PLAIN, 12f));
+		tgBox.add(Box.createHorizontalGlue());
+		tgBox.setVisible(false);
+		return tgBox;
+	}
+
+	/**
+	 * Показать или спрятать строку Телеграма. Ссылку берём только в бота Телеграма: всё прочее (сайт
+	 * без поля, странный ответ) ведёт в профиль на сайте - там та же кнопка.
+	 */
+	private void setTelegram(boolean need, String link) {
+		if (need) {
+			String nick = settings.getProperty("nick", "");
+			tgLinkNow = link != null && link.startsWith("https://t.me/")
+					? link
+					: Site.base() + (nick.isEmpty() ? "/login" : "/u/" + nick + "#tg");
+			// Строка про упавшую игру тут лишняя: мешает сейчас Телеграм, а не она.
+			crashBox.setVisible(false);
+		}
+		tgBox.setVisible(need);
+		tgBox.getParent().revalidate();
+		tgBox.getParent().repaint();
 	}
 
 	private void fitStatus(int height) {

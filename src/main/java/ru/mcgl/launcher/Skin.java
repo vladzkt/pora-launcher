@@ -277,6 +277,76 @@ final class Skin {
 		}
 	}
 
+	/**
+	 * Кнопка второго ряда: золотая рамка и надпись без заливки (01.10.2026, «Привязать Телеграм»).
+	 * Рядом с «Играть» стоит вторая главная кнопка - и не спорит с ней цветом. Ширина - по тексту.
+	 */
+	static final class LineButton extends JComponent {
+		private final String text;
+		private final Runnable action;
+		private boolean hover;
+		private boolean pressed;
+
+		LineButton(String text, Runnable action) {
+			this.text = text;
+			this.action = action;
+			int wide = getFontMetrics(font(Font.BOLD, 12.5f)).stringWidth(text) + 28;
+			Dimension size = new Dimension(wide, 28);
+			setPreferredSize(size);
+			setMinimumSize(size);
+			setMaximumSize(size);
+			setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+			addMouseListener(new MouseAdapter() {
+				@Override
+				public void mouseEntered(MouseEvent e) {
+					hover = true;
+					repaint();
+				}
+
+				@Override
+				public void mouseExited(MouseEvent e) {
+					hover = false;
+					pressed = false;
+					repaint();
+				}
+
+				@Override
+				public void mousePressed(MouseEvent e) {
+					pressed = true;
+					repaint();
+				}
+
+				@Override
+				public void mouseReleased(MouseEvent e) {
+					boolean fire = pressed && contains(e.getPoint());
+					pressed = false;
+					repaint();
+					if (fire) {
+						action.run();
+					}
+				}
+			});
+		}
+
+		@Override
+		protected void paintComponent(Graphics g) {
+			Graphics2D g2 = (Graphics2D) g.create();
+			g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+			int shift = pressed ? 1 : 0;
+			int w = getWidth();
+			int h = getHeight();
+			g2.setColor(hover ? new Color(GOLD.getRed(), GOLD.getGreen(), GOLD.getBlue(), 38) : FIELD);
+			g2.fillRoundRect(0, shift, w, h - 1, 9, 9);
+			g2.setColor(hover ? GOLD_TOP : GOLD);
+			g2.drawRoundRect(0, shift, w - 1, h - 2, 9, 9);
+			g2.setFont(font(Font.BOLD, 12.5f));
+			int tw = g2.getFontMetrics().stringWidth(text);
+			g2.drawString(text, (w - tw) / 2, h / 2 + g2.getFontMetrics().getAscent() / 2 - 2 + shift);
+			g2.dispose();
+		}
+	}
+
 	/** Галочка: системная в тёмном окне выглядит белым пятном, поэтому своя. */
 	static final class Check extends JComponent {
 		private final String text;
