@@ -118,6 +118,14 @@ public final class Game {
 		// Ключ - сюда, а не в командную строку: окружение дочернего процесса чужой программе
 		// так просто не достаётся, а командная строка видна всем.
 		builder.environment().put("PORAKOPATB_TOKEN", account.token());
+		// Чужие настройки Java из окружения игре не передаём (01.10.2026). У блогера в Windows
+		// стояло _JAVA_OPTIONS=-Xmx512M - такое оставляют другие программы, - Java подмешивает его
+		// после нашей командной строки, потолок памяти падает до 512 МБ при нашем -Xms в гигабайт,
+		// и игра не запускается вовсе: «Initial heap size set to a larger value than the maximum
+		// heap size». Память игре задаём сами (-Xmx/-Xms выше), подмешивать нечего.
+		for (String foreign : new String[] { "_JAVA_OPTIONS", "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS" }) {
+			builder.environment().remove(foreign);
+		}
 		builder.directory(root.toFile());
 		builder.redirectErrorStream(true);
 		builder.redirectOutput(root.resolve("game.log").toFile());
