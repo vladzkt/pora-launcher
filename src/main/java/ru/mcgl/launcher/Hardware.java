@@ -238,10 +238,10 @@ public final class Hardware {
 					// Поток не создался - спрашиваем здесь, в оставшееся время.
 					cim.set(cimUuid(deadline));
 				} else {
+					// С запасом в 150 мс (он внутри MARGIN_MS): ответ CIM, пришедший под самый срок,
+					// поток ещё дочитывает - без запаса плата уходила бы одним реестром.
 					long left = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
-					if (left > 0) {
-						asking.join(left);
-					}
+					asking.join(Math.max(left, 0) + 150);
 				}
 				bios = hashes("bios", usableUuid(cim.get()), registry);
 			} catch (InterruptedException stop) {
@@ -465,13 +465,21 @@ public final class Hardware {
 	/**
 	 * Полный путь к системной программе: так её не подменит одноимённый файл в папке игры или
 	 * лаунчера, откуда Windows ищет программы раньше системной.
+	 *
+	 * Сперва C:\Windows, и только если там программы нет - SystemRoot: переменная окружения
+	 * принадлежит игроку так же, как SystemDrive, и с SystemRoot, указывающей в пустоту, не
+	 * находились ни реестр, ни vol, ни PowerShell - отпечаток выходил без платы и диска.
 	 */
 	private static String system(String program) {
-		String root = System.getenv("SystemRoot");
-		if (root == null || root.isBlank()) {
-			return program.substring(program.lastIndexOf('\\') + 1);
+		for (String root : new String[] {"C:\\Windows", System.getenv("SystemRoot")}) {
+			if (root != null && !root.isBlank()) {
+				java.io.File file = new java.io.File(root + "\\System32\\" + program);
+				if (file.isFile()) {
+					return file.getPath();
+				}
+			}
 		}
-		return root + "\\System32\\" + program;
+		return program.substring(program.lastIndexOf('\\') + 1);
 	}
 
 	/** Строка ответа, где есть слово, или пустая строка. */
