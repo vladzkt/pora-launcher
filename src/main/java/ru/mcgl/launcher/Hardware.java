@@ -16,6 +16,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -26,18 +27,26 @@ import java.util.regex.Pattern;
  * сайт узнавал по одному MachineGuid ({@link Machine}). 02.10.2026 игрок вошёл третьим аккаунтом,
  * «почистив реестр»: GUID лежит в реестре и меняется одной правкой, а адреса у него меняются сами.
  * Владелец одобрил отпечаток покрепче: к GUID добавляются номер платы, серийник системного диска и
- * адреса сетевых карт. Сайт отказывает, если хоть один хеш из списка совпал с чужими аккаунтами, -
- * значит, чтобы прийти «новым компьютером», менять придётся всё разом, а не одну строку реестра.
+ * адреса сетевых карт. Сайт отказывает, если хоть один хеш GUID, платы или диска совпал с чужими
+ * аккаунтами, - значит, чтобы прийти «новым компьютером», менять придётся всё разом, а не одну
+ * строку реестра.
  *
  * Виды, в постоянном порядке:
  * <ul>
  * <li>{@code guid} - ровно то, что уходит полем {@code machine} ({@link Machine#id()}), той же
  *     формулой, - чтобы старые отметки сайта продолжали совпадать;
- * <li>{@code bios} - UUID системы из SMBIOS (только Windows; на Маке и Линуксе им уже служит guid):
- *     реестр {@code HKLM\SYSTEM\HardwareConfig}, значение LastConfig, а если его нет -
- *     PowerShell, {@code Win32_ComputerSystemProduct}. Не wmic: в Windows 11 24H2 его убрали;
- * <li>{@code disk} - серийник тома системного диска, {@code vol} (только Windows);
- * <li>{@code mac} - до трёх адресов физических сетевых карт, по порядку строк.
+ * <li>{@code bios} - UUID системы из SMBIOS (только Windows; на Маке и Линуксе им уже служит guid),
+ *     до двух записей. Спрашивается всегда у самой платы - PowerShell,
+ *     {@code Win32_ComputerSystemProduct} (не wmic: в Windows 11 24H2 его убрали), - и ещё читается
+ *     из реестра, {@code HKLM\SYSTEM\HardwareConfig}, значение LastConfig. Реестр правится руками,
+ *     поэтому одному ему не верим: разошлись - уходят оба, и поправленный реестр настоящий номер не
+ *     прячет. Сначала то, что сказала плата;
+ * <li>{@code disk} - серийник тома, {@code vol} (только Windows), до двух записей: всегда C: и ещё
+ *     диск из SystemDrive, если это другая буква. Переменной среды одной не верим по той же
+ *     причине - её ставит кто угодно;
+ * <li>{@code mac} - до трёх адресов физических сетевых карт, которые сейчас подняты, по порядку
+ *     строк. Сайт их в лимит не считает: MAC чужой машины видит любой в той же сети, а свой
+ *     меняется в настройках карты. Они идут админу для сведения.
  * </ul>
  * Хеш - SHA-256 от {@code "porakopatb-hw:" + вид + ":" + значение}, шестнадцатерично строчными.
  * Сами значения компьютер не покидают и не пишутся никуда - ни в лог, ни на диск, ни в ошибку.
@@ -45,13 +54,18 @@ import java.util.regex.Pattern;
  * Мусор отбрасывается, а не хешируется: у дешёвых плат UUID бывает из одних нулей или
  * «03000200-0400-...», и такой хеш был бы общим для тысяч чужих компьютеров - третьим «на этом
  * компьютере» оказался бы любой из них. По той же причине из адресов выкинуты виртуальные карты
- * (VPN, VirtualBox, Hyper-V, Radmin), Bluetooth и случайные адреса Wi-Fi, которые Windows
- * выдумывает сама.
+ * (VPN, VirtualBox, Hyper-V, Parallels, Radmin), Bluetooth и случайные адреса Wi-Fi, которые
+ * Windows выдумывает сама.
  *
- * Запереть вход отпечаток не вправе. Каждая внешняя команда ждётся не дольше двух секунд, весь
- * сбор - не дольше четырёх; что не успело или не прочиталось, просто не попадает в список.
- * Ничего не требует прав администратора и не вызывает окна UAC: реестр читается на чтение,
- * {@code vol} и запрос к CIM доступны обычному пользователю. Считается один раз за запуск.
+ * Запереть вход отпечаток не вправе. Быстрая команда (reg, vol) ждётся не дольше двух секунд,
+ * PowerShell - до конца общего срока, весь сбор - не дольше пяти секунд от начала; что не успело
+ * или не прочиталось, просто не попадает в список. PowerShell запускается первым и в своём потоке,
+ * пока читается остальное. Ничего не требует прав администратора и не вызывает окна UAC: реестр
+ * читается на чтение, {@code vol} и запрос к CIM доступны обычному пользователю. Считается один
+ * раз за запуск, в фоне с самого старта ({@link #warm()}), так что вход обычно не ждёт вовсе.
+ *
+ * Честно о пределе: это держит только честный клиент на непеределанной машине. Тот, кто готов
+ * собрать запрос к сайту руками, пришлёт любой список, и проверить его сайту нечем.
  *
  * <b>Этот файл живёт в двух репозиториях и обязан совпадать до байта, кроме строки package:</b>
  * лаунчер ({@code pora-launcher: src/main/java/ru/mcgl/launcher/Hardware.java}) и мод
@@ -66,13 +80,19 @@ public final class Hardware {
 	}
 
 	private static final String SALT = "porakopatb-hw:";
-	/** Сколько ждём одну внешнюю команду. */
+	/** Сколько ждём одну быструю внешнюю команду (reg, vol). */
 	private static final long STEP_MS = 2000;
-	/** Сколько ждём весь сбор от его начала: вход дольше не задерживаем. */
-	private static final long TOTAL_MS = 4000;
+	/**
+	 * Сколько ждём весь сбор от его начала. Пять секунд - ради PowerShell: на холодной машине он
+	 * поднимается секунды две-три, а спрашивается теперь всегда, а не только когда молчит реестр.
+	 */
+	private static final long TOTAL_MS = 5000;
 	/** Запас, чтобы сбор успел сложить результат до того, как вход перестанет его ждать. */
 	private static final long MARGIN_MS = 200;
 	private static final int MAX_MACS = 3;
+	/** Плат и дисков - не больше двух каждого: настоящее и то, что сказал реестр или SystemDrive. */
+	private static final int MAX_SAME = 2;
+	/** guid, две платы, два диска, три адреса. */
 	private static final int MAX_ENTRIES = 8;
 
 	private static final Pattern HASH = Pattern.compile("[0-9a-f]{64}");
@@ -96,9 +116,12 @@ public final class Hardware {
 			// Русская Windows переводит имена встроенных виртуальных карт Майкрософт.
 			"виртуальн");
 
-	/** Начала адресов виртуальных карт: VMware, VirtualBox, Hyper-V, Parallels, TAP-драйверы VPN. */
+	/**
+	 * Начала адресов виртуальных карт: VMware (00:05:69, 00:0C:29, 00:1C:14, 00:50:56), VirtualBox
+	 * (08:00:27), Hyper-V (00:15:5D), Parallels (00:1C:42), TAP-драйверы VPN (00:FF).
+	 */
 	private static final List<String> VIRTUAL_PREFIXES = List.of(
-			"00:05:69", "00:0C:29", "00:1C:14", "00:50:56", "08:00:27", "00:15:5D", "00:FF");
+			"00:05:69", "00:0C:29", "00:1C:14", "00:50:56", "08:00:27", "00:15:5D", "00:1C:42", "00:FF");
 
 	private static final Object LOCK = new Object();
 	/** Поток сбора; null - сбор ещё не начинали. */
@@ -106,8 +129,8 @@ public final class Hardware {
 	/** Когда сбор начат, по {@link System#nanoTime()}. */
 	private static long startedAt;
 
-	private static volatile String bios;
-	private static volatile String disk;
+	private static volatile List<String> bios = List.of();
+	private static volatile List<String> disks = List.of();
 	private static volatile List<String> macs = List.of();
 
 	private Hardware() {
@@ -135,8 +158,8 @@ public final class Hardware {
 	}
 
 	/**
-	 * Хеши этого компьютера в постоянном порядке: guid, bios, disk, mac. Ждёт сбор не дольше
-	 * четырёх секунд от его начала; что не успело - в список не попадает. Не бросает никогда.
+	 * Хеши этого компьютера в постоянном порядке: guid, bios, disk, mac. Ждёт сбор не дольше пяти
+	 * секунд от его начала; что к этому сроку не готово - в список не попадает. Не бросает никогда.
 	 */
 	public static List<Entry> list() {
 		List<Entry> out = new ArrayList<>();
@@ -160,8 +183,12 @@ public final class Hardware {
 		} catch (RuntimeException | LinkageError quiet) {
 			// Отпечаток - не условие входа: что собрали, то и отдаём.
 		}
-		add(out, "bios", bios);
-		add(out, "disk", disk);
+		for (String one : bios) {
+			add(out, "bios", one);
+		}
+		for (String one : disks) {
+			add(out, "disk", one);
+		}
 		for (String mac : macs) {
 			add(out, "mac", mac);
 		}
@@ -175,24 +202,27 @@ public final class Hardware {
 	}
 
 	/**
-	 * Поток сбора: каждый вид отдельно, упавший вид не мешает остальным. Порядок - от быстрого и
-	 * надёжного к медленному: плата из реестра и диск отвечают за десятки миллисекунд, опрос сетевых
-	 * карт на машине с VPN и Hyper-V бывает и в секунду, а PowerShell запускается дольше всех - он
-	 * последним и только когда реестр промолчал. Не успело к сроку - пропадает хвост, а не плата.
+	 * Поток сбора: каждый вид отдельно, упавший вид не мешает остальным. PowerShell поднимается
+	 * дольше всех, поэтому он запускается первым и в своём потоке; пока он думает, читаются реестр,
+	 * диск и сетевые карты. Каждое готовое сразу кладётся в поля: вход, которому ждать уже некогда,
+	 * заберёт то, что есть. Плата из реестра кладётся сразу, а когда ответит CIM - список платы
+	 * собирается заново: сперва номер от CIM, за ним реестр, если он сказал другое.
 	 */
 	private static void collect() {
 		long deadline = startedAt + TimeUnit.MILLISECONDS.toNanos(TOTAL_MS - MARGIN_MS);
 		boolean windows = windows();
+		AtomicReference<String> cim = new AtomicReference<>();
+		Thread asking = windows ? askCim(cim, deadline) : null;
 		String registry = null;
 		if (windows) {
 			try {
-				registry = registryUuid(deadline);
-				bios = hash("bios", usableUuid(registry));
+				registry = usableUuid(registryUuid(deadline));
+				bios = hashes("bios", registry);
 			} catch (Exception | LinkageError skip) {
-				// без платы - попробуем PowerShell ниже
+				// без реестра - останется то, что скажет CIM
 			}
 			try {
-				disk = hash("disk", volumeSerial(deadline));
+				disks = hashes("disk", volumeSerials(deadline));
 			} catch (Exception | LinkageError skip) {
 				// без диска
 			}
@@ -202,12 +232,41 @@ public final class Hardware {
 		} catch (Exception | LinkageError skip) {
 			// Нет сети в Java или она бросила - без адресов.
 		}
-		if (windows && registry == null) {
+		if (windows) {
 			try {
-				bios = hash("bios", usableUuid(cimUuid(deadline)));
+				if (asking == null) {
+					// Поток не создался - спрашиваем здесь, в оставшееся время.
+					cim.set(cimUuid(deadline));
+				} else {
+					long left = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+					if (left > 0) {
+						asking.join(left);
+					}
+				}
+				bios = hashes("bios", usableUuid(cim.get()), registry);
+			} catch (InterruptedException stop) {
+				Thread.currentThread().interrupt();
 			} catch (Exception | LinkageError skip) {
-				// без платы
+				// без CIM - остаётся реестр
 			}
+		}
+	}
+
+	/** Спросить CIM в своём потоке. Null - поток не создался, и спрашивать придётся самому. */
+	private static Thread askCim(AtomicReference<String> into, long deadline) {
+		Thread thread = new Thread(() -> {
+			try {
+				into.set(cimUuid(deadline));
+			} catch (RuntimeException | LinkageError skip) {
+				// без CIM
+			}
+		}, "отпечаток-железа-плата");
+		thread.setDaemon(true);
+		try {
+			thread.start();
+			return thread;
+		} catch (RuntimeException | Error refused) {
+			return null;
 		}
 	}
 
@@ -225,21 +284,40 @@ public final class Hardware {
 		return HexFormat.of().formatHex(sum);
 	}
 
+	/**
+	 * Хеши разных значений одного вида, по порядку и не больше {@link #MAX_SAME}: пустые и null
+	 * пропускаются, одинаковые дают один хеш.
+	 */
+	static List<String> hashes(String kind, String... values) throws Exception {
+		List<String> out = new ArrayList<>();
+		for (String value : values) {
+			String one = hash(kind, value);
+			if (one != null && !out.contains(one) && out.size() < MAX_SAME) {
+				out.add(one);
+			}
+		}
+		return List.copyOf(out);
+	}
+
 	// --- плата ----------------------------------------------------------------------------------
 
 	/**
-	 * UUID системы из SMBIOS - тот, что показывает {@code Win32_ComputerSystemProduct}. Сперва
-	 * реестр: Windows сама кладёт его в {@code HardwareConfig\LastConfig} (вида {@code {4C4C4544-...}}),
-	 * и это быстро. Null - реестр не ответил; тогда {@link #cimUuid} спросит PowerShell.
+	 * UUID системы из реестра: Windows сама кладёт его в {@code HardwareConfig\LastConfig} (вида
+	 * {@code {4C4C4544-...}}), и это быстро. Но это всего лишь значение в реестре, и правится оно
+	 * так же, как MachineGuid, - поэтому рядом всегда спрашивается {@link #cimUuid}.
 	 */
 	private static String registryUuid(long deadline) {
-		return uuidIn(lineWith(run(deadline, system("reg.exe"), "query", "HKLM\\SYSTEM\\HardwareConfig",
+		return uuidIn(lineWith(run(STEP_MS, deadline, system("reg.exe"), "query", "HKLM\\SYSTEM\\HardwareConfig",
 				"/v", "LastConfig", "/reg:64"), "LastConfig"));
 	}
 
-	/** Тот же UUID через PowerShell, если в реестре его не нашлось: он думает дольше, поэтому вторым. */
+	/**
+	 * UUID системы у самой платы - через PowerShell и CIM, тот, что показывает
+	 * {@code Win32_ComputerSystemProduct}. Правкой реестра его не поменять. PowerShell думает
+	 * дольше всех, поэтому ему отпущено всё время до общего срока, а не две секунды.
+	 */
 	private static String cimUuid(long deadline) {
-		return uuidIn(run(deadline, system("WindowsPowerShell\\v1.0\\powershell.exe"), "-NoProfile",
+		return uuidIn(run(TOTAL_MS, deadline, system("WindowsPowerShell\\v1.0\\powershell.exe"), "-NoProfile",
 				"-NonInteractive", "-Command", "(Get-CimInstance Win32_ComputerSystemProduct).UUID"));
 	}
 
@@ -269,17 +347,28 @@ public final class Hardware {
 	// --- диск -----------------------------------------------------------------------------------
 
 	/**
-	 * Серийник тома системного диска из {@code vol}. Ответ переведён на язык системы («Серийный
-	 * номер тома: ...»), поэтому ищем не слова, а сам вид XXXX-XXXX, и берём последний: строкой
-	 * выше стоит метка тома, а в ней может оказаться что угодно.
+	 * Серийники томов: всегда C: и ещё диск из SystemDrive, если это другая буква. Одной
+	 * SystemDrive верить нельзя: это переменная среды, и поставить её можно какую угодно - хоть на
+	 * флешку, чтобы приходить с «новым диском». C: почти у всех и есть системный; у кого Windows
+	 * стоит на другом диске, тот пришлёт оба.
 	 */
-	private static String volumeSerial(long deadline) {
+	private static String[] volumeSerials(long deadline) {
+		String first = volumeSerial(deadline, "C:");
 		String drive = System.getenv("SystemDrive");
-		if (drive == null || !DRIVE.matcher(drive).matches()) {
-			drive = "C:";
-		}
+		String other = drive != null && DRIVE.matcher(drive).matches() && !"C:".equalsIgnoreCase(drive)
+				? volumeSerial(deadline, drive.toUpperCase(Locale.ROOT))
+				: null;
+		return new String[] { first, other };
+	}
+
+	/**
+	 * Серийник тома из {@code vol}. Ответ переведён на язык системы («Серийный номер тома: ...»),
+	 * поэтому ищем не слова, а сам вид XXXX-XXXX, и берём последний: строкой выше стоит метка тома,
+	 * а в ней может оказаться что угодно.
+	 */
+	private static String volumeSerial(long deadline, String drive) {
 		// /d - не выполнять AutoRun из реестра: чужая команда там могла бы повесить или засорить ответ.
-		return serialIn(run(deadline, system("cmd.exe"), "/d", "/c", "vol", drive));
+		return serialIn(run(STEP_MS, deadline, system("cmd.exe"), "/d", "/c", "vol", drive));
 	}
 
 	static String serialIn(String text) {
@@ -297,10 +386,11 @@ public final class Hardware {
 	// --- сетевые карты --------------------------------------------------------------------------
 
 	/**
-	 * Хеши адресов физических сетевых карт: включена карта или нет - неважно, важно, что она есть.
-	 * Windows показывает одну карту несколько раз (с фильтрами QoS, WFP и прочими) - адрес у них
-	 * один, поэтому множество. Берём три первых по порядку строк: порядок не зависит от того,
-	 * в каком порядке их отдала система.
+	 * Хеши адресов физических сетевых карт, которые сейчас подняты. Снятые и выключенные карты
+	 * Windows помнит годами, и в отпечаток они не годятся: это уже не то железо, что стоит в
+	 * компьютере. Windows показывает одну карту несколько раз (с фильтрами QoS, WFP и прочими) -
+	 * адрес у них один, поэтому множество. Берём три первых по порядку строк: порядок не зависит от
+	 * того, в каком порядке их отдала система. Сайт адреса в лимит не считает - только для сведения.
 	 */
 	private static List<String> macHashes() throws Exception {
 		Enumeration<NetworkInterface> all = NetworkInterface.getNetworkInterfaces();
@@ -310,7 +400,7 @@ public final class Hardware {
 		TreeSet<String> found = new TreeSet<>();
 		for (NetworkInterface one : Collections.list(all)) {
 			try {
-				if (one.isLoopback() || one.isVirtual() || one.isPointToPoint()
+				if (!one.isUp() || one.isLoopback() || one.isVirtual() || one.isPointToPoint()
 						|| virtualName(one.getName()) || virtualName(one.getDisplayName())) {
 					continue;
 				}
@@ -395,12 +485,12 @@ public final class Hardware {
 	}
 
 	/**
-	 * Вывод команды или пустая строка, если она не запустилась, не уложилась в свои две секунды
-	 * (и в остаток общих четырёх) или ответила ошибкой. Вывод читается в своём потоке: повисшая
+	 * Вывод команды или пустая строка, если она не запустилась, не уложилась в свой срок
+	 * ({@code step} и остаток общего) или ответила ошибкой. Вывод читается в своём потоке: повисшая
 	 * команда снимается, а не держит вход.
 	 */
-	private static String run(long deadline, String... command) {
-		long budget = Math.min(STEP_MS, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()));
+	private static String run(long step, long deadline, String... command) {
+		long budget = Math.min(step, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()));
 		if (budget <= 0) {
 			return "";
 		}

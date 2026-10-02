@@ -39,7 +39,7 @@ public final class Machine {
 	private static final String SALT = "porakopatb-machine:";
 	/**
 	 * Дольше ждать команду незачем: вход и так идёт, пока она думает. Две секунды, как и у
-	 * остальных команд отпечатка ({@link Hardware}): весь сбор обязан уложиться в четыре.
+	 * быстрых команд отпечатка ({@link Hardware}): весь сбор обязан уложиться в пять.
 	 */
 	private static final long WAIT_MS = 2000;
 
