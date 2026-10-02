@@ -193,9 +193,27 @@ public final class Site {
 	}
 
 	private static Account ask(JsonObject body) throws IOException {
+		// Сбор отпечатка железа - в фоне и раньше Machine.id(): тогда оба идут одновременно и вход
+		// ждёт не дольше четырёх секунд на всё. Обычно он уже запущен из main, тут - на случай --check.
+		Hardware.warm();
 		// Отпечаток компьютера - хеш, не сам идентификатор (см. Machine). По нему сайт держит правило
 		// «не больше двух аккаунтов на компьютер» - одинаково для входа по паролю и по ключу.
 		body.addProperty("machine", Machine.id());
+		// С 02.10.2026 ещё и отпечаток железа (см. Hardware): плата, диск, сетевые карты. Поле уходит
+		// всегда, даже пустым списком, - по нему сайт отличает новый лаунчер от старого, а пустой
+		// список значит «не прочиталось», а не «не умею». Поле machine остаётся: старые отметки
+		// сайта и сайт до этой правки читают его.
+		JsonArray hw = new JsonArray();
+		for (Hardware.Entry entry : Hardware.list()) {
+			JsonObject one = new JsonObject();
+			one.addProperty("kind", entry.kind());
+			one.addProperty("hash", entry.hash());
+			hw.add(one);
+		}
+		body.add("hw", hw);
+		// Кто спрашивает: лаунчер или мод из игры, и какой версии. Сайт по нему решает, требовать ли
+		// отпечаток железа, и отвечает «обнови лаунчер», а не общим отказом.
+		body.addProperty("client", "launcher/" + Update.running());
 		HttpURLConnection link = open(base + "/api/launcher/login", 20000);
 		link.setRequestMethod("POST");
 		link.setDoOutput(true);
@@ -224,6 +242,11 @@ public final class Site {
 	 * или в интернет ({@code ip}), и игроку в этих случаях делать разное.
 	 */
 	private static String reason(String code, String scope) {
+		if (outdated(code)) {
+			// Новая версия скачивается сама при запуске (см. Update) - перезапуска и хватит.
+			return "Обнови лаунчер: закрой его и открой снова - новая версия скачается сама. "
+					+ "Не помогло - скачай лаунчер с сайта заново.";
+		}
 		return switch (code) {
 			case "bad_credentials" -> "Ник или пароль не подошли.";
 			case "banned" -> "Эта учётная запись заблокирована.";
@@ -235,6 +258,21 @@ public final class Site {
 					: "На этом компьютере уже играют два аккаунта, третий войти не может. "
 						+ "Если это ошибка - напишите администрации.";
 			default -> "Сайт ответил отказом. Попробуй позже.";
+		};
+	}
+
+	/**
+	 * Сайт требует клиент новее этого (02.10.2026): он умеет отказывать тем, кто не шлёт отпечаток
+	 * железа, - выключателем у админа, когда новый лаунчер уже разошёлся. Сайт отвечает
+	 * {@code update_required} со {@code scope} {@code launcher} или {@code mod}; остальные написания
+	 * понимаем тоже, чтобы переименованный на сайте код не превратился у игрока в «Сайт ответил
+	 * отказом» без подсказки, что делать. Тот же список - в {@code SiteLogin} мода.
+	 */
+	static boolean outdated(String code) {
+		return switch (code) {
+			case "update_launcher", "update_mod", "update_client", "update_required", "upgrade_required",
+					"outdated_client", "client_outdated", "old_client", "hw_required" -> true;
+			default -> false;
 		};
 	}
 

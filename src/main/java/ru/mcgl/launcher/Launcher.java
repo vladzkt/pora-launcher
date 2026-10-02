@@ -111,6 +111,10 @@ public final class Launcher {
 			shot(args.length > 1 ? args[1] : "launcher.png", args.length > 2 ? args[2] : "");
 			return;
 		}
+		// Отпечаток железа считается в фоне, пока человек смотрит на окно: к «Играть» он уже готов,
+		// и вход не ждёт ни реестра, ни PowerShell. После Update.apply - чтобы не считать его в том
+		// экземпляре, который сейчас уступит место новой версии.
+		Hardware.warm();
 		SwingUtilities.invokeLater(() -> new Launcher().show());
 	}
 

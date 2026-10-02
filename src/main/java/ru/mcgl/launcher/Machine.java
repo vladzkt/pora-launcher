@@ -37,8 +37,11 @@ import java.util.concurrent.TimeUnit;
 public final class Machine {
 
 	private static final String SALT = "porakopatb-machine:";
-	/** Дольше ждать команду незачем: вход и так идёт, пока она думает. */
-	private static final long WAIT_MS = 3000;
+	/**
+	 * Дольше ждать команду незачем: вход и так идёт, пока она думает. Две секунды, как и у
+	 * остальных команд отпечатка ({@link Hardware}): весь сбор обязан уложиться в четыре.
+	 */
+	private static final long WAIT_MS = 2000;
 
 	private static volatile String cached;
 
@@ -136,7 +139,7 @@ public final class Machine {
 	}
 
 	/**
-	 * Вывод команды или пустая строка, если она не запустилась, не уложилась в три секунды или
+	 * Вывод команды или пустая строка, если она не запустилась, не уложилась в две секунды или
 	 * ответила ошибкой. Вывод читаем в своём потоке: повисшая команда не должна держать вход.
 	 */
 	private static String run(String... command) {
