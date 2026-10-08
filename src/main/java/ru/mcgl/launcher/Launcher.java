@@ -393,11 +393,11 @@ public final class Launcher {
 
 		left(panel, Box.createVerticalGlue());
 		left(panel, link("Настройки", this::openSetup));
-		left(panel, link("Регистрация", () -> open(Site.base() + "/register")));
-		left(panel, link("Забыл пароль", () -> open(Site.base() + "/forgot")));
-		left(panel, link("Вики сервера", () -> open(Site.base() + "/wiki")));
-		left(panel, link("Карта мира", () -> open(Site.base() + "/map")));
-		left(panel, link("Форум", () -> open(Site.base() + "/forum")));
+		left(panel, link("Регистрация", () -> open(browserBase() + "/register")));
+		left(panel, link("Забыл пароль", () -> open(browserBase() + "/forgot")));
+		left(panel, link("Вики сервера", () -> open(browserBase() + "/wiki")));
+		left(panel, link("Карта мира", () -> open(browserBase() + "/map")));
+		left(panel, link("Форум", () -> open(browserBase() + "/forum")));
 		return panel;
 	}
 
@@ -456,9 +456,32 @@ public final class Launcher {
 		});
 	}
 
+	/**
+	 * Адрес сайта для браузера - тот, что прислал сайт в ссылке «Регистрация» (09.10.2026).
+	 *
+	 * Это не всегда {@link Site#base()}: Ростелеком рвёт в браузере всё, что зовётся porakopatb.com,
+	 * хотя сам лаунчер (Java) проходит. Сайт по адресу спросившего отдаёт игрокам из России ссылки на
+	 * porakopat.com - тот же сайт под другим именем. Пока сайт не ответил - прежний адрес.
+	 */
+	private static volatile String browserBase;
+	private static final java.util.Set<String> BROWSER_BASES = java.util.Set.of(
+			"https://porakopatb.com", "https://ru.porakopatb.com", "https://porakopat.com");
+
+	private static String browserBase() {
+		String known = browserBase;
+		return known != null ? known : Site.base();
+	}
+
 	private void fillSide() {
 		tellAboutGame();
 		Site.Home home = Site.home();
+		if (home != null && home.register() != null && home.register().endsWith("/register")) {
+			String base = home.register().substring(0, home.register().length() - "/register".length());
+			// Только наши имена: адрес из ответа открывается в браузере, чужой сюда пускать незачем.
+			if (BROWSER_BASES.contains(base)) {
+				browserBase = base;
+			}
+		}
 		String pack = packWhen();
 		SwingUtilities.invokeLater(() -> {
 			newsBox.removeAll();
