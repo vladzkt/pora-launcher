@@ -60,6 +60,10 @@ public final class Launcher {
 	private Skin.GoldButton play;
 	private Skin.Check remember;
 	private JPanel passBlock;
+	/** Свои аккаунты на этом компьютере - основной и твинки, у каждого свой сохранённый вход. */
+	private Accounts accounts;
+	/** Строка аккаунтов под ником: кнопка на каждый, «+ твинк» и «убрать». */
+	private JPanel accountRow;
 	private JPanel newsBox;
 	/** Блок «Скоро»: заголовок и строки событий; спрятан, пока сайт не прислал афишу. */
 	private JPanel soonBlock;
@@ -208,6 +212,8 @@ public final class Launcher {
 	private void show() {
 		SHOWN = this;
 		load();
+		accounts = new Accounts(settings);
+		save();
 		root = Path.of(settings.getProperty("dir", Files2.home().toString()));
 		frame = new JFrame("Пора Копать");
 		frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -233,7 +239,12 @@ public final class Launcher {
 		body.add(row(Skin.caption("Ник"), 16));
 		body.add(Box.createVerticalStrut(5));
 		body.add(capped(new Skin.Field(nick), 40));
-		body.add(Box.createVerticalStrut(14));
+		accountRow = new JPanel();
+		accountRow.setLayout(new BoxLayout(accountRow, BoxLayout.X_AXIS));
+		accountRow.setBackground(Skin.BG);
+		body.add(Box.createVerticalStrut(6));
+		body.add(capped(accountRow, 26));
+		body.add(Box.createVerticalStrut(10));
 
 		// Когда вход сохранён, поле прячем целиком: пустая строка «Пароль» выглядит так, будто
 		// лаунчер каждый раз просит пароль заново.
@@ -295,10 +306,12 @@ public final class Launcher {
 				&& (password.getPassword().length > 0 || !saved().isEmpty()));
 		Skin.onType(nick, check);
 		Skin.onType(password, check);
+		// Набрал или выбрал свой аккаунт с сохранённым входом - пароль прячется, чужой или новый - нужен.
+		Skin.onType(nick, this::syncAccount);
 		// Снял галочку - забываем ключ сразу, не дожидаясь следующего входа, и просим пароль.
 		remember.onChange(() -> {
 			if (!remember.isOn() && !saved().isEmpty()) {
-				settings.remove("device");
+				accounts.forget(nick.getText().trim());
 				save();
 				askPassword();
 			}
@@ -306,6 +319,7 @@ public final class Launcher {
 		});
 		check.run();
 		passBlock.setVisible(saved().isEmpty());
+		refreshAccounts();
 
 		password.addActionListener(e -> go());
 		nick.addActionListener(e -> password.requestFocusInWindow());
@@ -689,6 +703,116 @@ public final class Launcher {
 		return home.players().size() > 8 ? home.players().size() + " · " + who : home.players().size() + " в игре";
 	}
 
+	/** Набран ник своего аккаунта с сохранённым входом - пароль не нужен; чужой или новый - нужен. */
+	private void syncAccount() {
+		if (passBlock == null || working) {
+			return;
+		}
+		if (!saved().isEmpty()) {
+			if (passBlock.isVisible()) {
+				passBlock.setVisible(false);
+				passBlock.revalidate();
+				passBlock.repaint();
+			}
+			if (!remember.isOn()) {
+				remember.set(true);
+			}
+		} else if (!passBlock.isVisible()) {
+			passBlock.setVisible(true);
+			passBlock.revalidate();
+			passBlock.repaint();
+		}
+		refreshAccounts();
+	}
+
+	/**
+	 * Строка аккаунтов под ником: кнопка на каждый (выбранный - золотой), «+ твинк» и «убрать».
+	 * Пока аккаунтов нет - строки нет: первый встаёт в неё сам после первого входа.
+	 */
+	private void refreshAccounts() {
+		if (accountRow == null) {
+			return;
+		}
+		accountRow.removeAll();
+		java.util.List<String> list = accounts.nicks();
+		String current = nick.getText().trim();
+		java.awt.FontMetrics metrics = accountRow.getFontMetrics(Skin.font(Font.BOLD, 12f));
+		for (String one : list) {
+			Skin.Pill pill = new Skin.Pill(one, one.equalsIgnoreCase(current), () -> pickAccount(one));
+			fit(pill, Math.min(130, Math.max(56, metrics.stringWidth(one) + 22)));
+			accountRow.add(pill);
+			accountRow.add(Box.createHorizontalStrut(5));
+		}
+		if (list.size() < Accounts.MAX) {
+			Skin.Pill add = new Skin.Pill("+ твинк", false, this::newTwink);
+			fit(add, metrics.stringWidth("+ твинк") + 22);
+			accountRow.add(add);
+		}
+		if (accounts.has(current)) {
+			accountRow.add(Box.createHorizontalStrut(10));
+			accountRow.add(new Skin.Link("убрать", 11f, false, () -> dropAccount(current)));
+		}
+		accountRow.add(Box.createHorizontalGlue());
+		accountRow.setVisible(!list.isEmpty());
+		accountRow.revalidate();
+		accountRow.repaint();
+	}
+
+	private static void fit(Component what, int width) {
+		Dimension size = new Dimension(width, 26);
+		what.setPreferredSize(size);
+		what.setMinimumSize(size);
+		what.setMaximumSize(size);
+	}
+
+	/** Выбрать аккаунт из строки: ник в поле, а пароль - только если сохранённого входа нет. */
+	private void pickAccount(String one) {
+		if (working) {
+			return;
+		}
+		nick.setText(one);
+		password.setText("");
+		if (saved().isEmpty()) {
+			askPassword();
+		} else {
+			play.requestFocusInWindow();
+		}
+		settings.setProperty("nick", one);
+		save();
+	}
+
+	/** Добавить твинка: пустой ник и пароль, галочка «запомнить» - и после входа он в строке. */
+	private void newTwink() {
+		if (working) {
+			return;
+		}
+		nick.setText("");
+		password.setText("");
+		if (!remember.isOn()) {
+			remember.set(true);
+		}
+		askPassword();
+		nick.requestFocusInWindow();
+		plain("Введи ник и пароль твинка");
+	}
+
+	/** Убрать аккаунт из списка на этом компьютере. Учётная запись на сайте остаётся как была. */
+	private void dropAccount(String one) {
+		if (working) {
+			return;
+		}
+		accounts.remove(one);
+		save();
+		java.util.List<String> left = accounts.nicks();
+		if (left.isEmpty()) {
+			nick.setText("");
+			askPassword();
+		} else {
+			pickAccount(left.get(0));
+		}
+		refreshAccounts();
+	}
+
 	/** Показать поле пароля и поставить в него курсор: сохранённый вход больше не годится. */
 	private void askPassword() {
 		if (passBlock.isVisible()) {
@@ -771,9 +895,9 @@ public final class Launcher {
 		crashBox.repaint();
 	}
 
-	/** Ключ «запомнить пароль» для этой машины; пустая строка, если его нет. */
+	/** Ключ «запомнить пароль» аккаунта, чей ник в поле; пустая строка, если его нет. */
 	private String saved() {
-		return settings.getProperty("device", "");
+		return nick == null ? "" : accounts.key(nick.getText().trim());
 	}
 
 	private void go() {
@@ -800,10 +924,15 @@ public final class Launcher {
 						: Site.login(who, secret, remember.isOn());
 				long askedAt = System.currentTimeMillis();
 				settings.setProperty("nick", account.nick());
+				accounts.add(account.nick());
 				if (!account.device().isEmpty()) {
-					settings.setProperty("device", account.device());
+					accounts.remember(account.nick(), account.device());
+				} else if (!secret.isEmpty() && !remember.isOn()) {
+					// Вошёл паролем без галочки - прежний ключ этого аккаунта больше не нужен.
+					accounts.forget(account.nick());
 				}
 				save();
+				SwingUtilities.invokeLater(this::refreshAccounts);
 				// Без Телеграма сервер не пустит (01.10.2026) - кнопка сразу, а игра ставится дальше:
 				// пока качается гигабайт, как раз есть время привязать.
 				SwingUtilities.invokeLater(() -> setTelegram(account.needTg(), account.tgLink()));
@@ -870,7 +999,7 @@ public final class Launcher {
 				String message = broken.getMessage() == null ? broken.toString() : broken.getMessage();
 				// Ключ протух или его отозвали сменой пароля - выбрасываем и просим пароль.
 				if (message.contains("Сохранённый вход")) {
-					settings.remove("device");
+					accounts.forget(who);
 					save();
 					SwingUtilities.invokeLater(() -> {
 						remember.set(false);
