@@ -282,7 +282,7 @@ public final class Launcher {
 		body.add(tgRow());
 		body.add(Box.createVerticalGlue());
 
-		body.add(row(Skin.label((Site.viaMoscow() ? "ru.porakopatb.com · " : "porakopatb.com · ") + Update.running(),
+		body.add(row(Skin.label(Site.host() + " · " + Update.running(),
 				new java.awt.Color(0x5E6878), Font.PLAIN, 11f), 16));
 
 		Skin.Header head = new Skin.Header(image("head.png"), WIDTH, HEADER);

@@ -37,6 +37,12 @@ public final class Site {
 	 * тот же сайт идёт посредником в Москве. Какой из двух брать, решает {@link #chooseRoute()}.
 	 */
 	public static final String RU = "https://ru.porakopatb.com";
+	/**
+	 * Тот же посредник в Москве под именем без porakopatb (13.10.2026): у МТС и Ростелекома любое
+	 * имя с porakopatb может рваться ещё на входе, а к Hetzner у МТС глохнет всё дальше первых
+	 * килобайт. Пробуем его последним - тем, у кого работает хоть один из первых двух, он не нужен.
+	 */
+	public static final String RU2 = "https://ru.porakopat.com";
 	private static final int PROBE_BYTES = 64 * 1024;
 	private static final int PROBE_MS = 6000;
 
@@ -48,7 +54,12 @@ public final class Site {
 	}
 
 	public static boolean viaMoscow() {
-		return RU.equals(base);
+		return RU.equals(base) || RU2.equals(base);
+	}
+
+	/** Имя сайта для подписи в окне: porakopatb.com, ru.porakopatb.com или ru.porakopat.com. */
+	public static String host() {
+		return URI.create(base).getHost();
 	}
 	private static final String AGENT = "PoraKopatb-Launcher/1.0";
 
@@ -118,18 +129,23 @@ public final class Site {
 		} catch (IOException none) {
 			// первый запуск
 		}
-		String first = "ru".equals(last) ? RU : MAIN;
+		String first = "ru2".equals(last) ? RU2 : "ru".equals(last) ? RU : MAIN;
 		String second = first.equals(MAIN) ? RU : MAIN;
+		// Третий - тот из трёх, что не попал в первые два.
+		String third = !first.equals(RU2) && !second.equals(RU2) ? RU2 : RU;
 		if (reaches(first)) {
 			base = first;
 		} else if (reaches(second)) {
 			base = second;
+		} else if (reaches(third)) {
+			base = third;
 		} else {
 			base = first;
 		}
 		try {
 			Files.createDirectories(remembered.getParent());
-			Files.writeString(remembered, viaMoscow() ? "ru" : "main", StandardCharsets.UTF_8);
+			Files.writeString(remembered, RU2.equals(base) ? "ru2" : viaMoscow() ? "ru" : "main",
+					StandardCharsets.UTF_8);
 		} catch (IOException ignored) {
 			// не записали - в следующий раз просто пробуем по порядку
 		}
