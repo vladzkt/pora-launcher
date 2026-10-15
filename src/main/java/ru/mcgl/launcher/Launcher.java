@@ -163,6 +163,8 @@ public final class Launcher {
 	/** Рисуем окно в файл, чтобы посмотреть на него, никому его не показывая. */
 	private static void shot(String file, String mode) throws Exception {
 		boolean setup = "setup".equals(mode);
+		SHOOTING = true;
+		SHOOT_QUICK = "quick".equals(mode);
 		SwingUtilities.invokeAndWait(() -> new Launcher().show());
 		Thread.sleep(setup ? 300 : 2500);
 		if (setup) {
@@ -195,6 +197,10 @@ public final class Launcher {
 		});
 		System.exit(0);
 	}
+
+	/** Идёт съёмка окна в файл: быстрый запуск только рисуется, ни входа, ни игры. */
+	private static boolean SHOOTING;
+	private static boolean SHOOT_QUICK;
 
 	/** Последнее открытое окно: нужно только съёмке. */
 	private static Launcher SHOWN;
@@ -236,15 +242,20 @@ public final class Launcher {
 		password = Skin.secret();
 		nick.setText(settings.getProperty("nick", ""));
 
-		body.add(row(Skin.caption("Ник"), 16));
-		body.add(Box.createVerticalStrut(5));
-		body.add(capped(new Skin.Field(nick), 40));
+		// Ник, пароль, «запомнить» и «Играть» - одним блоком: в быстром запуске он спрятан целиком.
+		form = new JPanel();
+		form.setLayout(new BoxLayout(form, BoxLayout.Y_AXIS));
+		form.setBackground(Skin.BG);
+		form.add(row(Skin.caption("Ник"), 16));
+		form.add(Box.createVerticalStrut(5));
+		form.add(capped(new Skin.Field(nick), 40));
+		// Твинки с 15.10.2026 живут в игре - карточками под персонажем в главном меню; строку в лаунчере
+		// не показываем. Список и ключи остаются в настройках: игра берёт их отсюда.
 		accountRow = new JPanel();
 		accountRow.setLayout(new BoxLayout(accountRow, BoxLayout.X_AXIS));
 		accountRow.setBackground(Skin.BG);
-		body.add(Box.createVerticalStrut(6));
-		body.add(capped(accountRow, 26));
-		body.add(Box.createVerticalStrut(10));
+		form.add(Box.createVerticalStrut(10));
+		body.add(form);
 
 		// Когда вход сохранён, поле прячем целиком: пустая строка «Пароль» выглядит так, будто
 		// лаунчер каждый раз просит пароль заново.
@@ -256,15 +267,15 @@ public final class Launcher {
 		passBlock.add(capped(new Skin.Field(password), 40));
 		passBlock.add(Box.createVerticalStrut(12));
 		passBlock.setMaximumSize(new Dimension(Integer.MAX_VALUE, 73));
-		body.add(passBlock);
+		form.add(passBlock);
 
 		remember = new Skin.Check("Запомнить пароль", !saved().isEmpty());
-		body.add(capped(remember, 20));
-		body.add(Box.createVerticalStrut(16));
+		form.add(capped(remember, 20));
+		form.add(Box.createVerticalStrut(16));
 
 		play = new Skin.GoldButton("Играть", this::go);
-		body.add(capped(play, 44));
-		body.add(Box.createVerticalStrut(16));
+		form.add(capped(play, 44));
+		form.add(Box.createVerticalStrut(16));
 
 		bar = new Skin.Bar();
 		body.add(capped(bar, 6));
@@ -280,6 +291,18 @@ public final class Launcher {
 		crashBox.setVisible(false);
 		body.add(crashBox);
 		body.add(tgRow());
+		quickLinks = new JPanel();
+		quickLinks.setLayout(new BoxLayout(quickLinks, BoxLayout.X_AXIS));
+		quickLinks.setBackground(Skin.BG);
+		quickLinks.setMaximumSize(new Dimension(Integer.MAX_VALUE, 22));
+		quickLinks.add(snug(new Skin.Link("Настройки", 12f, false, this::openSetup)));
+		quickLinks.add(Box.createHorizontalStrut(18));
+		quickLinks.add(snug(new Skin.Link("Войти другим", 12f, false, this::expand)));
+		quickLinks.add(Box.createHorizontalGlue());
+		quickLinks.add(snug(new Skin.Link("Закрыть", 12f, false, () -> System.exit(0))));
+		quickLinks.setVisible(false);
+		body.add(Box.createVerticalStrut(8));
+		body.add(quickLinks);
 		body.add(Box.createVerticalGlue());
 
 		body.add(row(Skin.label(Site.host() + " · " + Update.running(),
@@ -293,11 +316,13 @@ public final class Launcher {
 		left.setPreferredSize(new Dimension(WIDTH, HEIGHT));
 		left.add(head, BorderLayout.NORTH);
 		left.add(body, BorderLayout.CENTER);
+		leftPanel = left;
 
 		JPanel outer = new JPanel(new BorderLayout());
 		outer.setBackground(Skin.BG);
 		outer.add(left, BorderLayout.WEST);
-		outer.add(side(), BorderLayout.CENTER);
+		sidePanel = side();
+		outer.add(sidePanel, BorderLayout.CENTER);
 		frame.setContentPane(outer);
 
 		// Кнопка гаснет, пока не введено и то и другое: меньше поводов увидеть отказ сайта.
@@ -324,12 +349,65 @@ public final class Launcher {
 		password.addActionListener(e -> go());
 		nick.addActionListener(e -> password.requestFocusInWindow());
 
+		// Быстрый запуск (15.10.2026, владелец: «лаунчер - заставка, всё в игре»): вход сохранён - окно
+		// сжимается до картинки и полосы и само идёт в игру. Новости, онлайн и твинки теперь в главном меню
+		// игры. Что-то не так (вход слетел, Телеграм, упала игра) - окно разворачивается в полное, как было.
+		quick = SHOOTING ? SHOOT_QUICK
+				: !nick.getText().isBlank() && !saved().isEmpty() && !"false".equals(settings.getProperty("quickStart"));
+		if (quick) {
+			form.setVisible(false);
+			sidePanel.setVisible(false);
+			quickLinks.setVisible(true);
+			leftPanel.setPreferredSize(new Dimension(WIDTH, QUICK_HEIGHT));
+			frame.setSize(WIDTH, QUICK_HEIGHT);
+			frame.setLocationRelativeTo(null);
+		}
 		frame.setVisible(true);
 		if (!nick.getText().isBlank() && saved().isEmpty()) {
 			password.requestFocusInWindow();
 		}
 		// Новости и онлайн тянем после окна: сайт может не ответить, а играть это не мешает.
 		new Thread(this::fillSide, "новости").start();
+		if (quick && !SHOOTING) {
+			go();
+		} else if (quick) {
+			plain("Обновляю файлы… 34 из 41");
+			bar.setVisible(true);
+			bar.set(0.72);
+		}
+	}
+
+	/** Высота окна в быстром запуске: картинка, полоса, строка и ссылки. */
+	private static final int QUICK_HEIGHT = 300;
+	private boolean quick;
+	private JPanel form;
+	private JPanel quickLinks;
+	private JPanel leftPanel;
+	private JPanel sidePanel;
+
+	/** Ссылка ровно по своему тексту: BoxLayout иначе растягивает её на всю строку. */
+	private static Component snug(Component what) {
+		Dimension size = new Dimension(what.getPreferredSize().width + 4, 20);
+		what.setPreferredSize(size);
+		what.setMinimumSize(size);
+		what.setMaximumSize(size);
+		return what;
+	}
+
+	/** Из быстрого запуска - в полное окно: поля, новости, всё как раньше. */
+	private void expand() {
+		if (!quick) {
+			return;
+		}
+		quick = false;
+		form.setVisible(true);
+		sidePanel.setVisible(true);
+		quickLinks.setVisible(false);
+		leftPanel.setPreferredSize(new Dimension(WIDTH, HEIGHT));
+		frame.setSize(WIDTH + SIDE, HEIGHT);
+		frame.setLocationRelativeTo(null);
+		frame.getContentPane().revalidate();
+		frame.repaint();
 	}
 
 	/** Правая колонка: новости, кто в игре и ссылки. */
@@ -753,7 +831,7 @@ public final class Launcher {
 			accountRow.add(new Skin.Link("убрать", 11f, false, () -> dropAccount(current)));
 		}
 		accountRow.add(Box.createHorizontalGlue());
-		accountRow.setVisible(!list.isEmpty());
+		accountRow.setVisible(false);
 		accountRow.revalidate();
 		accountRow.repaint();
 	}
@@ -960,6 +1038,7 @@ public final class Launcher {
 				}
 				if (player.needTg()) {
 					SwingUtilities.invokeLater(() -> {
+						expand();
 						working = false;
 						bar.setVisible(false);
 						play.setOn(true);
@@ -988,6 +1067,7 @@ public final class Launcher {
 				Vault.erase(unpacked);
 				int code = game.exitValue();
 				SwingUtilities.invokeLater(() -> {
+					expand();
 					working = false;
 					bar.setVisible(false);
 					play.setOn(true);
@@ -1007,6 +1087,7 @@ public final class Launcher {
 					});
 				}
 				SwingUtilities.invokeLater(() -> {
+					expand();
 					if (spinner != null) {
 						spinner.stop();
 					}
