@@ -1050,8 +1050,10 @@ public final class Launcher {
 				say("Запускаю игру");
 				// Моды расшифровываются сюда и живут ровно столько, сколько идёт игра.
 				Path unpacked = Vault.unpack(pack.files(), player.packKey());
+				int memoryMb = memory();
 				Process game = Game.start(root, plan, player, pack.minecraft(), pack.fabric(),
-						memory(), unpacked);
+						memoryMb, unpacked);
+				Running.mark(memoryMb);
 				SwingUtilities.invokeLater(() -> frame.setVisible(false));
 				// Игра встаёт на ноги секунд десять. Если она умерла за это время - это не запуск,
 				// а падение, и игроку надо показать окно обратно, иначе он остаётся ни с чем.
@@ -1061,9 +1063,11 @@ public final class Launcher {
 					// временной папке до следующего запуска, а ради того, чтобы их там не было, всё
 					// и затевалось. Окно к этому времени уже скрыто, так что для игрока он исчез.
 					game.waitFor();
+					Running.unmark();
 					Vault.erase(unpacked);
 					System.exit(0);
 				}
+				Running.unmark();
 				Vault.erase(unpacked);
 				int code = game.exitValue();
 				SwingUtilities.invokeLater(() -> {
@@ -1103,7 +1107,14 @@ public final class Launcher {
 		}, "поехали").start();
 	}
 
-	/** Сколько памяти отдать игре: половина от машины, но не меньше двух и не больше восьми. */
+	/**
+	 * Сколько памяти отдать игре: половина от машины, но не меньше двух и не больше восьми.
+	 *
+	 * <p>Если на компьютере уже идёт другая наша игра (второй аккаунт, 18.10.2026), - половину того, что она
+	 * оставила, за вычетом двух гигабайт на систему, и не больше четырёх: иначе две игры вместе просят всю
+	 * память, Windows выгружает её на диск, и лагают оба окна. Сколько взяли другие - {@link Running}.
+	 * Число, выставленное игроком в настройках, не трогаем: он его выбрал сам.
+	 */
 	private int memory() {
 		String saved = settings.getProperty("memory");
 		if (saved != null) {
@@ -1121,6 +1132,10 @@ public final class Launcher {
 			total = os.getTotalMemorySize() / 1024 / 1024;
 		} catch (Throwable ignored) {
 			// Не вышло спросить систему - остаёмся на четырёх гигабайтах.
+		}
+		long others = Running.othersMb();
+		if (others > 0) {
+			return (int) Math.max(2048, Math.min(4096, (total - others - 2048) / 2));
 		}
 		return (int) Math.max(2048, Math.min(8192, total / 2));
 	}
